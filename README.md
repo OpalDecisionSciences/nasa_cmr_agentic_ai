@@ -565,6 +565,24 @@ poetry run mypy nasa_cmr_agent/
 - **mypy**: Type checking
 - **pytest**: Testing (85%+ coverage required)
 
+## 🚀 Deployment
+
+The application is production-ready and can be deployed to various platforms:
+
+### Recommended Platforms
+- **Railway.app**: One-click deployment with `railway.json` configuration
+- **Render.com**: Deploy using `render.yaml` configuration  
+- **Heroku**: Use included `Procfile`
+- **AWS/GCP/Azure**: Deploy with Docker or native Python
+
+### Production Server
+```bash
+gunicorn nasa_cmr_agent.api.main:app -k uvicorn.workers.UvicornWorker --bind 0.0.0.0:$PORT --workers 2
+```
+
+### Known Issues
+- **macOS Development**: On macOS (especially Apple Silicon M1/M2), there's a known asyncio socket binding issue with uvicorn/hypercorn/daphne. This is a platform-specific issue that does not affect Linux production environments. The application runs perfectly in Docker containers and on Linux-based deployment platforms.
+
 ## 📄 License
 
 MIT License - see [LICENSE](LICENSE) file for details.
@@ -587,6 +605,19 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Concurrent Requests**: Adjust based on available memory
 - **Circuit Breaker**: Tune thresholds for your network conditions
 - **Caching**: Enable Redis for production deployments
+
+## 👩‍💻 Author
+
+**Jeannine Jordan**  
+Opal Decision Sciences  
+Email: opaldecisionsciences@gmail.com  
+GitHub: [@OpalDecisionSciences](https://github.com/OpalDecisionSciences)
+
+## 🏆 Acknowledgments
+
+- NASA Earthdata team for the comprehensive CMR API
+- LangChain/LangGraph community for the excellent agent framework
+- OpenAI and Anthropic for powerful language models
 
 ---
 

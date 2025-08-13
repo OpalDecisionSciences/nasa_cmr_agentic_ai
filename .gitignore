@@ -102,7 +102,12 @@ temp/
 *.npy
 *.npz
 embeddings/
-models/
+# ML model files (not source code)
+*.pkl
+*.h5
+*.hdf5
+data/models/
+cache/models/
 checkpoints/
 
 # Docker

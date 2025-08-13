@@ -121,7 +121,7 @@ class SupervisorLearningIntegration:
         adaptive_learner.learn_from_query(
             query=query,
             context=context,
-            response={"validation": validation_result.dict()},
+            response={"validation": validation_result.model_dump()},
             execution_time=0,  # Not relevant for validation
             success=weighted_success > 0.5
         )

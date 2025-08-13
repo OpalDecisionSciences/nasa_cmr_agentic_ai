@@ -63,7 +63,7 @@ class DataAnalysisAgent:
             if recommendations:
                 analysis_results.append(AnalysisResult(
                     analysis_type="dataset_recommendations",
-                    results={"recommendations": [rec.dict() for rec in recommendations]},
+                    results={"recommendations": [rec.model_dump() for rec in recommendations]},
                     methodology="Multi-criteria scoring with relevance, coverage, quality, and accessibility factors",
                     confidence_level=0.85,
                     statistics={"total_datasets": len(collections), "recommended": len(recommendations)}

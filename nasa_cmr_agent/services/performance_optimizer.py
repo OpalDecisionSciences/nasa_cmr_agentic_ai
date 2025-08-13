@@ -158,9 +158,9 @@ class PerformanceCache:
         serializable_params = {}
         for k, v in params.items():
             try:
-                if hasattr(v, 'dict'):
+                if hasattr(v, 'model_dump'):
                     # Pydantic models
-                    serializable_params[k] = v.dict()
+                    serializable_params[k] = v.model_dump()
                 elif hasattr(v, '__dict__'):
                     # Other objects with __dict__
                     serializable_params[k] = str(v)

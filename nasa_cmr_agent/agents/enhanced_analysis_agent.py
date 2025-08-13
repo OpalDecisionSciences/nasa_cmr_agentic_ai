@@ -80,22 +80,36 @@ class EnhancedAnalysisAgent:
         try:
             # Index collections in vector database for future searches
             if collections:
-                await self._index_collections_async(collections)
+                try:
+                    await self._index_collections_async(collections)
+                except Exception as e:
+                    logger.warning(f"Vector database indexing failed: {e}")
             
             # Enhance query with vector search context
-            enhanced_context, context_items = await self.rag_service.enhance_query_with_context(
-                query_context, max_context_items=8
-            )
+            context_items = []
+            enhanced_context = query_context
+            try:
+                enhanced_context, context_items = await self.rag_service.enhance_query_with_context(
+                    query_context, max_context_items=8
+                )
+            except Exception as e:
+                logger.warning(f"RAG enhancement failed: {e}")
             
             # Generate enhanced recommendations with RAG
-            enhanced_recommendations = await self._generate_enhanced_recommendations(
-                enhanced_context, collections, granules, context_items
-            )
+            enhanced_recommendations = []
+            try:
+                enhanced_recommendations = await self._generate_enhanced_recommendations(
+                    enhanced_context, collections, granules, context_items
+                )
+            except Exception as e:
+                logger.warning(f"Enhanced recommendations failed: {e}")
+                # Fall back to basic recommendations
+                enhanced_recommendations = collections[:10] if collections else []
             
             if enhanced_recommendations:
                 analysis_results.append(AnalysisResult(
                     analysis_type="enhanced_dataset_recommendations",
-                    results={"recommendations": [rec.dict() for rec in enhanced_recommendations]},
+                    results={"recommendations": [rec.model_dump() if hasattr(rec, 'model_dump') else rec for rec in enhanced_recommendations]},
                     methodology="Multi-criteria scoring enhanced with vector similarity, RAG context, and knowledge graph relationships",
                     confidence_level=0.92,
                     statistics={
@@ -107,40 +121,55 @@ class EnhancedAnalysisAgent:
             
             # Perform knowledge graph relationship analysis
             if collections:
-                kg_relationships = await self._analyze_knowledge_graph_relationships(collections)
-                if kg_relationships:
-                    analysis_results.append(kg_relationships)
+                try:
+                    kg_relationships = await self._analyze_knowledge_graph_relationships(collections)
+                    if kg_relationships:
+                        analysis_results.append(kg_relationships)
+                except Exception as e:
+                    logger.warning(f"Knowledge graph analysis failed: {e}")
             
             # Vector similarity analysis
             if context_items:
-                similarity_analysis = await self._analyze_vector_similarities(
-                    query_context, collections, context_items
-                )
-                if similarity_analysis:
-                    analysis_results.append(similarity_analysis)
+                try:
+                    similarity_analysis = await self._analyze_vector_similarities(
+                        query_context, collections, context_items
+                    )
+                    if similarity_analysis:
+                        analysis_results.append(similarity_analysis)
+                except Exception as e:
+                    logger.warning(f"Vector similarity analysis failed: {e}")
             
             # RAG-enhanced gap analysis
             if query_context.constraints.temporal:
-                rag_gap_analysis = await self._rag_enhanced_gap_analysis(
-                    query_context, collections, granules
-                )
-                if rag_gap_analysis:
-                    analysis_results.append(rag_gap_analysis)
+                try:
+                    rag_gap_analysis = await self._rag_enhanced_gap_analysis(
+                        query_context, collections, granules
+                    )
+                    if rag_gap_analysis:
+                        analysis_results.append(rag_gap_analysis)
+                except Exception as e:
+                    logger.warning(f"RAG gap analysis failed: {e}")
             
             # Data fusion opportunity analysis
-            fusion_analysis = await self._analyze_fusion_opportunities(
-                query_context, collections[:5]  # Top 5 collections
-            )
-            if fusion_analysis:
-                analysis_results.append(fusion_analysis)
+            try:
+                fusion_analysis = await self._analyze_fusion_opportunities(
+                    query_context, collections[:5]  # Top 5 collections
+                )
+                if fusion_analysis:
+                    analysis_results.append(fusion_analysis)
+            except Exception as e:
+                logger.warning(f"Data fusion analysis failed: {e}")
             
             # Research pathway analysis
             if query_context.research_domain:
-                pathway_analysis = await self._analyze_research_pathways(
-                    query_context.research_domain, collections
-                )
-                if pathway_analysis:
-                    analysis_results.append(pathway_analysis)
+                try:
+                    pathway_analysis = await self._analyze_research_pathways(
+                        query_context.research_domain, collections
+                    )
+                    if pathway_analysis:
+                        analysis_results.append(pathway_analysis)
+                except Exception as e:
+                    logger.warning(f"Research pathway analysis failed: {e}")
             
             logger.info(f"Enhanced analysis completed with {len(analysis_results)} result types")
             

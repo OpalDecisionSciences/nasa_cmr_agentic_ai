@@ -310,7 +310,7 @@ class AgentScratchpad:
         """
         if format == "json":
             return json.dumps(
-                [entry.dict() for entry in self.entries.values()],
+                [entry.model_dump() for entry in self.entries.values()],
                 default=str,
                 indent=2
             )

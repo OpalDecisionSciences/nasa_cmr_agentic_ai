@@ -367,10 +367,10 @@ async def _stream_query_processing(query: str):
         
         # Stream agent responses as they complete
         for agent_response in response.agent_responses:
-            yield f"data: {json.dumps(agent_response.dict())}\n\n"
+            yield f"data: {json.dumps(agent_response.model_dump())}\n\n"
         
         # Stream final response
-        yield f"data: {json.dumps(response.dict())}\n\n"
+        yield f"data: {json.dumps(response.model_dump())}\n\n"
         yield "data: [DONE]\n\n"
         
     except Exception as e:

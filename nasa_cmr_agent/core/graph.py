@@ -371,7 +371,7 @@ class CMRAgentGraph:
                 if validation.passed:
                     # Add validation metadata to response
                     response.metadata = response.metadata or {}
-                    response.metadata["quality_score"] = validation.quality_score.dict()
+                    response.metadata["quality_score"] = validation.quality_score.model_dump()
                     response.metadata["supervisor_validated"] = True
                     return response
                 

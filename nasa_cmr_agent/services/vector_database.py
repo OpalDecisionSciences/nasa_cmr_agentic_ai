@@ -7,8 +7,10 @@ import hashlib
 import json
 
 import weaviate
+import weaviate.classes as wvc
 from weaviate.classes.init import Auth
 from weaviate.classes.query import MetadataQuery
+from weaviate.classes.config import Configure
 from sentence_transformers import SentenceTransformer
 from langchain_community.embeddings import SentenceTransformerEmbeddings
 
@@ -94,95 +96,95 @@ class VectorDatabaseService:
             collection = self.client.collections.create(
                 name=self.collection_name,
                 properties=[
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="concept_id",
-                        data_type=weaviate.classes.config.DataType.TEXT,
+                        data_type=wvc.config.DataType.TEXT,
                         description="NASA CMR concept ID"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="title",
-                        data_type=weaviate.classes.config.DataType.TEXT,
+                        data_type=wvc.config.DataType.TEXT,
                         description="Dataset title"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="summary",
-                        data_type=weaviate.classes.config.DataType.TEXT,
+                        data_type=wvc.config.DataType.TEXT,
                         description="Dataset summary/description"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="short_name",
-                        data_type=weaviate.classes.config.DataType.TEXT,
+                        data_type=wvc.config.DataType.TEXT,
                         description="Dataset short name"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="data_center",
-                        data_type=weaviate.classes.config.DataType.TEXT,
+                        data_type=wvc.config.DataType.TEXT,
                         description="Data center/provider"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="platforms",
-                        data_type=weaviate.classes.config.DataType.TEXT_ARRAY,
+                        data_type=wvc.config.DataType.TEXT_ARRAY,
                         description="Satellite platforms"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="instruments",
-                        data_type=weaviate.classes.config.DataType.TEXT_ARRAY,
+                        data_type=wvc.config.DataType.TEXT_ARRAY,
                         description="Instruments used"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="variables",
-                        data_type=weaviate.classes.config.DataType.TEXT_ARRAY,
+                        data_type=wvc.config.DataType.TEXT_ARRAY,
                         description="Measured variables"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="temporal_start",
-                        data_type=weaviate.classes.config.DataType.DATE,
+                        data_type=wvc.config.DataType.DATE,
                         description="Temporal coverage start"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="temporal_end", 
-                        data_type=weaviate.classes.config.DataType.DATE,
+                        data_type=wvc.config.DataType.DATE,
                         description="Temporal coverage end"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="spatial_coverage",
-                        data_type=weaviate.classes.config.DataType.TEXT,
+                        data_type=wvc.config.DataType.TEXT,
                         description="Spatial coverage description"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="processing_level",
-                        data_type=weaviate.classes.config.DataType.TEXT,
+                        data_type=wvc.config.DataType.TEXT,
                         description="Data processing level"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="keywords",
-                        data_type=weaviate.classes.config.DataType.TEXT_ARRAY,
+                        data_type=wvc.config.DataType.TEXT_ARRAY,
                         description="Science keywords"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="cloud_hosted",
-                        data_type=weaviate.classes.config.DataType.BOOLEAN,
+                        data_type=wvc.config.DataType.BOOLEAN,
                         description="Whether dataset is cloud hosted"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="online_access",
-                        data_type=weaviate.classes.config.DataType.BOOLEAN,
+                        data_type=wvc.config.DataType.BOOLEAN,
                         description="Online access availability"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="combined_text",
-                        data_type=weaviate.classes.config.DataType.TEXT,
+                        data_type=wvc.config.DataType.TEXT,
                         description="Combined searchable text"
                     ),
-                    weaviate.classes.config.Property(
+                    wvc.config.Property(
                         name="created_at",
-                        data_type=weaviate.classes.config.DataType.DATE,
+                        data_type=wvc.config.DataType.DATE,
                         description="Record creation timestamp"
                     )
                 ],
-                vectorizer_config=weaviate.classes.config.Configure.Vectorizer.text2vec_transformers(),
-                vector_index_config=weaviate.classes.config.Configure.VectorIndex.hnsw(
-                    distance_metric=weaviate.classes.config.VectorDistances.COSINE
+                vectorizer_config=Configure.Vectorizer.text2vec_transformers(),
+                vector_index_config=Configure.VectorIndex.hnsw(
+                    distance_metric=wvc.config.VectorDistances.COSINE
                 )
             )
             

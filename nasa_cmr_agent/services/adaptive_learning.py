@@ -447,13 +447,13 @@ class AdaptiveLearningService:
         
         try:
             # Save patterns
-            patterns_data = [p.dict() for p in self.query_patterns.values()]
+            patterns_data = [p.model_dump() for p in self.query_patterns.values()]
             with open(patterns_file, 'w') as f:
                 json.dump(patterns_data, f, default=str, indent=2)
             
             # Save feedback (keep only recent)
             recent_feedback = self.user_feedback[-1000:]  # Keep last 1000
-            feedback_data = [fb.dict() for fb in recent_feedback]
+            feedback_data = [fb.model_dump() for fb in recent_feedback]
             with open(feedback_file, 'w') as f:
                 json.dump(feedback_data, f, default=str, indent=2)
         except Exception as e:

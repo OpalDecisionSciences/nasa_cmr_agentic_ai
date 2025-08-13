@@ -203,28 +203,24 @@ class CMRAPIAgent:
                        f"{constraints.spatial.east},{constraints.spatial.north}"
                 params["bounding_box"] = bbox
         
-        # Temporal constraints
+        # Temporal constraints - CMR expects temporal[] format
         if constraints.temporal:
             if constraints.temporal.start_date and constraints.temporal.end_date:
                 start = constraints.temporal.start_date.strftime("%Y-%m-%dT%H:%M:%SZ")
                 end = constraints.temporal.end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
-                params["temporal"] = f"{start},{end}"
+                params["temporal[]"] = f"{start},{end}"
         
-        # Science keywords
+        # Science keywords - use keyword parameter for broader search
         if constraints.keywords:
-            # CMR uses science_keywords parameter
-            for i, keyword in enumerate(constraints.keywords[:5]):  # Limit to 5
-                params[f"science_keywords[{i}][term]"] = keyword
+            params["keyword"] = " ".join(constraints.keywords[:5])
         
-        # Platforms
+        # Platforms - CMR expects platform[] format
         if constraints.platforms:
-            for i, platform in enumerate(constraints.platforms[:3]):
-                params[f"platform[{i}]"] = platform
+            params["platform[]"] = constraints.platforms[:3]
         
-        # Instruments
+        # Instruments - CMR expects instrument[] format  
         if constraints.instruments:
-            for i, instrument in enumerate(constraints.instruments[:3]):
-                params[f"instrument[{i}]"] = instrument
+            params["instrument[]"] = constraints.instruments[:3]
         
         # Data type constraints
         if constraints.data_types:
@@ -257,12 +253,12 @@ class CMRAPIAgent:
                    f"{constraints.spatial.east},{constraints.spatial.north}"
             params["bounding_box"] = bbox
         
-        # Temporal constraints
+        # Temporal constraints - CMR expects temporal[] format
         if constraints.temporal:
             if constraints.temporal.start_date and constraints.temporal.end_date:
                 start = constraints.temporal.start_date.strftime("%Y-%m-%dT%H:%M:%SZ")
                 end = constraints.temporal.end_date.strftime("%Y-%m-%dT%H:%M:%SZ")
-                params["temporal"] = f"{start},{end}"
+                params["temporal[]"] = f"{start},{end}"
         
         return params
     

@@ -1,4 +1,5 @@
 from typing import Dict, Any, List
+from typing_extensions import TypedDict
 import asyncio
 import logging
 from langgraph.graph import StateGraph, END
@@ -18,19 +19,17 @@ from ..core.config import settings
 logger = logging.getLogger(__name__)
 
 
-class AgentState(Dict[str, Any]):
+class AgentState(TypedDict):
     """State shared between agents in the LangGraph workflow."""
-    
-    def __init__(self, **data):
-        super().__init__(**data)
-        # Ensure required keys exist
-        self.setdefault("messages", [])
-        self.setdefault("query_context", None)
-        self.setdefault("cmr_results", {})
-        self.setdefault("analysis_results", [])
-        self.setdefault("agent_responses", [])
-        self.setdefault("errors", [])
-        self.setdefault("next_agent", None)
+    messages: List[Any]
+    query_context: Any
+    cmr_results: Dict[str, Any]
+    analysis_results: List[Any]
+    agent_responses: List[Any]
+    errors: List[Any]
+    next_agent: Any
+    original_query: str
+    retry_count: int
 
 
 class CMRAgentGraph:

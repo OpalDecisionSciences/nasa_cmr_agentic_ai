@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 import numpy as np
-from datetime import datetime
+from datetime import datetime, timezone
 import structlog
 import hashlib
 import json
@@ -89,12 +89,12 @@ class VectorDatabaseService:
         try:
             # Check if collection already exists
             try:
-                collections = self.client.collections.list_all()
-                if self.collection_name in [c.name for c in collections]:
+                # Use proper collection checking method
+                if self.client.collections.exists(self.collection_name):
                     logger.info(f"Collection '{self.collection_name}' already exists")
                     return True
             except Exception as e:
-                logger.warning(f"Could not list collections: {e}. Attempting to create new collection.")
+                logger.warning(f"Could not check collection existence: {e}. Attempting to create new collection.")
             
             # Create collection with schema
             collection = self.client.collections.create(
@@ -186,11 +186,6 @@ class VectorDatabaseService:
                         description="Record creation timestamp"
                     )
                 ],
-                vector_config=Configure.VectorIndex.hnsw(
-                    distance_metric=wvc.config.VectorDistances.COSINE,
-                    ef_construction=200,
-                    max_connections=64
-                ),
                 vectorizer_config=Configure.Vectorizer.none()
             )
             
@@ -255,7 +250,7 @@ class VectorDatabaseService:
                 "cloud_hosted": collection.cloud_hosted,
                 "online_access": collection.online_access_flag,
                 "combined_text": combined_text,
-                "created_at": datetime.now()
+                "created_at": datetime.now(timezone.utc)
             }
             
             # Get collection from client
@@ -386,7 +381,7 @@ class VectorDatabaseService:
                         "cloud_hosted": collection.cloud_hosted,
                         "online_access": collection.online_access_flag,
                         "combined_text": combined_text,
-                        "created_at": datetime.now()
+                        "created_at": datetime.now(timezone.utc)
                     }
                     
                     # Generate proper UUID for batch operation

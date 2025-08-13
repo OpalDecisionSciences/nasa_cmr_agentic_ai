@@ -5,6 +5,7 @@ from datetime import datetime
 import structlog
 import hashlib
 import json
+import uuid
 
 import weaviate
 import weaviate.classes as wvc
@@ -87,10 +88,13 @@ class VectorDatabaseService:
         
         try:
             # Check if collection already exists
-            collections = self.client.collections.list_all()
-            if self.collection_name in [c.name for c in collections]:
-                logger.info(f"Collection '{self.collection_name}' already exists")
-                return True
+            try:
+                collections = self.client.collections.list_all()
+                if self.collection_name in [c.name for c in collections]:
+                    logger.info(f"Collection '{self.collection_name}' already exists")
+                    return True
+            except Exception as e:
+                logger.warning(f"Could not list collections: {e}. Attempting to create new collection.")
             
             # Create collection with schema
             collection = self.client.collections.create(
@@ -255,23 +259,35 @@ class VectorDatabaseService:
             # Get collection from client
             nasa_collection = self.client.collections.get(self.collection_name)
             
-            # Check if document already exists
-            existing = nasa_collection.query.fetch_object_by_id(collection.concept_id)
+            # Generate proper UUID from concept_id
+            # Create UUID5 from concept_id for consistent UUIDs
+            namespace = uuid.UUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8')  # DNS namespace
+            document_uuid = uuid.uuid5(namespace, collection.concept_id)
             
-            if existing:
-                # Update existing document
-                nasa_collection.data.update(
-                    uuid=collection.concept_id,
-                    properties=document
-                )
-                logger.debug(f"Updated dataset {collection.concept_id} in vector database")
-            else:
-                # Insert new document
-                nasa_collection.data.insert(
-                    uuid=collection.concept_id,
-                    properties=document
-                )
-                logger.debug(f"Indexed dataset {collection.concept_id} in vector database")
+            try:
+                # Check if document already exists
+                existing = nasa_collection.query.fetch_object_by_id(document_uuid)
+                
+                if existing:
+                    # Update existing document
+                    nasa_collection.data.update(
+                        uuid=document_uuid,
+                        properties=document
+                    )
+                    logger.debug(f"Updated dataset {collection.concept_id} in vector database")
+                else:
+                    # Insert new document
+                    nasa_collection.data.insert(
+                        uuid=document_uuid,
+                        properties=document
+                    )
+                    logger.debug(f"Indexed dataset {collection.concept_id} in vector database")
+            
+            except Exception as uuid_error:
+                logger.warning(f"UUID operation failed for {collection.concept_id}: {uuid_error}")
+                # Try without explicit UUID (let Weaviate generate)
+                nasa_collection.data.insert(properties=document)
+                logger.debug(f"Indexed dataset {collection.concept_id} with auto-generated UUID")
             
             return True
             
@@ -339,8 +355,12 @@ class VectorDatabaseService:
                         "created_at": datetime.now()
                     }
                     
+                    # Generate proper UUID for batch operation
+                    namespace = uuid.UUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8')
+                    document_uuid = uuid.uuid5(namespace, collection.concept_id)
+                    
                     batch_data.append({
-                        "uuid": collection.concept_id,
+                        "uuid": document_uuid,
                         "properties": document
                     })
                     

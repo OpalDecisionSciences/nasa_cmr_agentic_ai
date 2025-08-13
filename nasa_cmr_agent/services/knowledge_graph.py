@@ -260,19 +260,38 @@ class KnowledgeGraphService:
             "same_data_center": []
         }
         
+        # Check if dataset exists first
         try:
             with self.driver.session() as session:
-                # Find datasets with same platforms
-                same_platform_result = session.run("""
-                    MATCH (d1:Dataset {concept_id: $concept_id})-[:COLLECTED_BY]->(p:Platform)
-                    MATCH (d2:Dataset)-[:COLLECTED_BY]->(p)
-                    WHERE d1 <> d2
-                    RETURN DISTINCT d2.concept_id as concept_id, 
-                           d2.title as title, 
-                           d2.short_name as short_name,
-                           p.name as platform_name
-                    LIMIT 10
-                """, {"concept_id": concept_id})
+                check_result = session.run(
+                    "MATCH (d:Dataset {concept_id: $concept_id}) RETURN COUNT(d) as count",
+                    {"concept_id": concept_id}
+                )
+                record = check_result.single()
+                if not record or record["count"] == 0:
+                    logger.warning(f"Dataset {concept_id} not found in knowledge graph")
+                    return relationships
+        except Exception as e:
+            logger.warning(f"Failed to check dataset existence: {e}")
+            return relationships
+        
+        try:
+            with self.driver.session() as session:
+                # Find datasets with same platforms (check if relationship exists first)
+                try:
+                    same_platform_result = session.run("""
+                        MATCH (d1:Dataset {concept_id: $concept_id})-[:COLLECTED_BY]->(p:Platform)
+                        MATCH (d2:Dataset)-[:COLLECTED_BY]->(p)
+                        WHERE d1 <> d2
+                        RETURN DISTINCT d2.concept_id as concept_id, 
+                               d2.title as title, 
+                               d2.short_name as short_name,
+                               p.name as platform_name
+                        LIMIT 10
+                    """, {"concept_id": concept_id})
+                except Exception as e:
+                    logger.debug(f"Platform relationship query failed: {e}")
+                    same_platform_result = []
                 
                 relationships["same_platform"] = [
                     {
@@ -286,16 +305,20 @@ class KnowledgeGraphService:
                 ]
                 
                 # Find datasets with same instruments
-                same_instrument_result = session.run("""
-                    MATCH (d1:Dataset {concept_id: $concept_id})-[:MEASURED_BY]->(i:Instrument)
-                    MATCH (d2:Dataset)-[:MEASURED_BY]->(i)
-                    WHERE d1 <> d2
-                    RETURN DISTINCT d2.concept_id as concept_id,
-                           d2.title as title,
-                           d2.short_name as short_name,
-                           i.name as instrument_name
-                    LIMIT 10
-                """, {"concept_id": concept_id})
+                try:
+                    same_instrument_result = session.run("""
+                        MATCH (d1:Dataset {concept_id: $concept_id})-[:MEASURED_BY]->(i:Instrument)
+                        MATCH (d2:Dataset)-[:MEASURED_BY]->(i)
+                        WHERE d1 <> d2
+                        RETURN DISTINCT d2.concept_id as concept_id,
+                               d2.title as title,
+                               d2.short_name as short_name,
+                               i.name as instrument_name
+                        LIMIT 10
+                    """, {"concept_id": concept_id})
+                except Exception as e:
+                    logger.debug(f"Instrument relationship query failed: {e}")
+                    same_instrument_result = []
                 
                 relationships["same_instrument"] = [
                     {
@@ -362,19 +385,23 @@ class KnowledgeGraphService:
                 ]
                 
                 # Find datasets with complementary variables
-                complementary_vars_result = session.run("""
-                    MATCH (d1:Dataset {concept_id: $concept_id})-[:MEASURES]->(v1:Variable)
-                    MATCH (d2:Dataset)-[:MEASURES]->(v2:Variable)
-                    WHERE d1 <> d2 
-                    AND v1 <> v2
-                    AND (v1.name CONTAINS 'temperature' OR v1.name CONTAINS 'precipitation' OR v1.name CONTAINS 'humidity')
-                    AND (v2.name CONTAINS 'temperature' OR v2.name CONTAINS 'precipitation' OR v2.name CONTAINS 'humidity')
-                    RETURN DISTINCT d2.concept_id as concept_id,
-                           d2.title as title,
-                           d2.short_name as short_name,
-                           COLLECT(DISTINCT v2.name) as variables
-                    LIMIT 8
-                """, {"concept_id": concept_id})
+                try:
+                    complementary_vars_result = session.run("""
+                        MATCH (d1:Dataset {concept_id: $concept_id})-[:MEASURES]->(v1:Variable)
+                        MATCH (d2:Dataset)-[:MEASURES]->(v2:Variable)
+                        WHERE d1 <> d2 
+                        AND v1 <> v2
+                        AND (v1.name CONTAINS 'temperature' OR v1.name CONTAINS 'precipitation' OR v1.name CONTAINS 'humidity')
+                        AND (v2.name CONTAINS 'temperature' OR v2.name CONTAINS 'precipitation' OR v2.name CONTAINS 'humidity')
+                        RETURN DISTINCT d2.concept_id as concept_id,
+                               d2.title as title,
+                               d2.short_name as short_name,
+                               COLLECT(DISTINCT v2.name) as variables
+                        LIMIT 8
+                    """, {"concept_id": concept_id})
+                except Exception as e:
+                    logger.debug(f"Variables relationship query failed: {e}")
+                    complementary_vars_result = []
                 
                 relationships["complementary_variables"] = [
                     {

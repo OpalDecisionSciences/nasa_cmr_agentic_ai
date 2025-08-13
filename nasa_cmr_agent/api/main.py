@@ -14,6 +14,7 @@ from ..core.graph import CMRAgentGraph
 from ..models import SystemResponse
 from ..services.monitoring import MetricsService
 from ..services.adaptive_learning import adaptive_learner, UserFeedback
+from ..services.startup_validator import StartupValidator
 
 
 # Configure structured logging
@@ -41,16 +42,35 @@ logger = structlog.get_logger(__name__)
 # Global agent graph instance
 agent_graph: CMRAgentGraph = None
 metrics_service: MetricsService = None
+startup_validation: Dict[str, Any] = {}
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management with proper async handling."""
-    global agent_graph, metrics_service
+    global agent_graph, metrics_service, startup_validation
     
     logger.info("Starting NASA CMR AI Agent API")
     
     try:
+        # Run startup validation first
+        try:
+            validator = StartupValidator()
+            startup_validation = await validator.validate_startup()
+            await validator.close()
+            
+            logger.info("Startup validation completed", 
+                       status=startup_validation.get("overall_status", "unknown"))
+            
+            # Print recommendations if any
+            if startup_validation.get("recommendations"):
+                logger.info("Startup recommendations:", 
+                           recommendations=startup_validation["recommendations"])
+                
+        except Exception as validation_error:
+            logger.warning(f"Startup validation failed: {validation_error}")
+            startup_validation = {"overall_status": "validation_failed", "errors": [str(validation_error)]}
+        
         # Initialize agent graph with fallback handling using thread pool (best practice)
         try:
             loop = asyncio.get_event_loop()
@@ -148,6 +168,13 @@ async def health_check():
         "llm_service": "unknown",
         "circuit_breaker": "unknown"
     }
+    
+    # Add startup validation status
+    if startup_validation:
+        db_connections = startup_validation.get("database_connections", {})
+        services["weaviate"] = "connected" if db_connections.get("weaviate", {}).get("connected") else "disconnected"
+        services["neo4j"] = "connected" if db_connections.get("neo4j", {}).get("connected") else "disconnected"
+        services["startup_status"] = startup_validation.get("overall_status", "unknown")
     
     # Safely check agent_graph components
     if agent_graph:

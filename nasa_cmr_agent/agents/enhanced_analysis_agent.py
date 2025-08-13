@@ -14,6 +14,7 @@ from ..services.llm_service import LLMService
 from ..services.vector_database import VectorDatabaseService
 from ..services.rag_service import RAGService
 from ..services.knowledge_graph import KnowledgeGraphService
+from ..services.database_pipeline import DatabasePipelineService
 
 logger = structlog.get_logger(__name__)
 
@@ -35,6 +36,7 @@ class EnhancedAnalysisAgent:
         self.vector_db = VectorDatabaseService()
         self.rag_service = RAGService()
         self.knowledge_graph = KnowledgeGraphService()
+        self.database_pipeline = DatabasePipelineService()
         
         # Initialize services
         self._initialize_services()
@@ -50,7 +52,11 @@ class EnhancedAnalysisAgent:
     async def _async_initialize(self):
         """Asynchronously initialize services."""
         try:
-            # Initialize schemas
+            # Initialize database pipeline (handles both vector DB and knowledge graph)
+            pipeline_success = await self.database_pipeline.initialize()
+            logger.info(f"Database pipeline initialized: {pipeline_success}")
+            
+            # Initialize schemas directly as backup
             await self.vector_db.initialize_schema()
             await self.knowledge_graph.initialize_schema()
             logger.info("Advanced analysis services initialized")
@@ -78,12 +84,17 @@ class EnhancedAnalysisAgent:
         analysis_results = []
         
         try:
-            # Index collections in vector database for future searches
+            # Use database pipeline to ingest CMR data into both databases
             if collections:
                 try:
-                    await self._index_collections_async(collections)
+                    pipeline_stats = await self.database_pipeline.ingest_query_results(
+                        query_context, collections, granules
+                    )
+                    logger.info("Database pipeline ingestion completed", stats=pipeline_stats)
                 except Exception as e:
-                    logger.warning(f"Vector database indexing failed: {e}")
+                    logger.warning(f"Database pipeline ingestion failed: {e}")
+                    # Fallback to basic indexing
+                    await self._index_collections_async(collections)
             
             # Enhance query with vector search context
             context_items = []

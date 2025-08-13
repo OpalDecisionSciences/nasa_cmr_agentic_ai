@@ -339,7 +339,7 @@ class AgentScratchpad:
                 await self.redis_client.hset(
                     self.redis_key,
                     entry.id,
-                    entry.json()
+                    entry.model_dump_json()
                 )
                 await self.redis_client.expire(self.redis_key, 86400 * 7)  # 7 days TTL
             except Exception as e:
@@ -378,7 +378,7 @@ class AgentScratchpad:
     async def _save_to_file(self):
         """Save entries to file storage."""
         try:
-            data = [entry.dict() for entry in self.entries.values()]
+            data = [entry.model_dump() for entry in self.entries.values()]
             
             async with aiofiles.open(self.file_path, 'w') as f:
                 await f.write(json.dumps(data, default=str, indent=2))
@@ -406,7 +406,7 @@ class AgentScratchpad:
                 await self.redis_client.hset(
                     self.redis_key,
                     entry.id,
-                    entry.json()
+                    entry.model_dump_json()
                 )
             
             logger.debug(f"Synced {len(self.entries)} entries with Redis for agent {self.agent_id}")

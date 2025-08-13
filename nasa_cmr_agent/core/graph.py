@@ -328,7 +328,13 @@ class CMRAgentGraph:
             initial_state = AgentState({
                 "messages": [HumanMessage(content=user_query)],
                 "original_query": user_query,
-                "retry_count": retry_count
+                "retry_count": retry_count,
+                "query_context": None,
+                "cmr_results": {},
+                "analysis_results": [],
+                "agent_responses": [],
+                "errors": [],
+                "next_agent": None
             })
             
             # Execute the workflow

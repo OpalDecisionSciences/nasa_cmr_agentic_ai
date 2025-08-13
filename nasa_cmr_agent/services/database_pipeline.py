@@ -1,7 +1,7 @@
 import asyncio
 from typing import List, Dict, Any, Optional, Set, Tuple
 import structlog
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 
 from ..models.schemas import CMRCollection, CMRGranule, QueryContext
@@ -139,20 +139,8 @@ class DatabasePipelineService:
                 # Extract variables from collection metadata (more reliable than API)
                 variables = self._extract_variables_from_metadata(collection)
                 
-                # Optional: Try CMR variables API as enhancement (not critical for core functionality)
-                try:
-                    if len(variables) < 3:  # Only try API if we need more variables
-                        variables_data = await self.cmr_agent.get_collection_variables(collection.concept_id)
-                        
-                        # Extract additional variable names
-                        for var_data in variables_data:
-                            if isinstance(var_data, dict):
-                                var_name = var_data.get("name") or var_data.get("variable_name") or var_data.get("long_name")
-                                if var_name and var_name not in variables:
-                                    variables.append(var_name)
-                except Exception as var_error:
-                    logger.debug(f"Variables API enhancement failed for {collection.concept_id}: {var_error}")
-                    # Continue with metadata-extracted variables
+                # Note: CMR variables API is disabled due to consistent 400 errors
+                # Using metadata extraction provides reliable variable identification
                 
                 # Update collection with variables
                 collection.variables = variables

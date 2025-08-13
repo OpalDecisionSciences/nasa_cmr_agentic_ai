@@ -96,98 +96,149 @@ class VectorDatabaseService:
             except Exception as e:
                 logger.warning(f"Could not check collection existence: {e}. Attempting to create new collection.")
             
-            # Create collection with schema
-            collection = self.client.collections.create(
-                name=self.collection_name,
-                properties=[
-                    wvc.config.Property(
-                        name="concept_id",
-                        data_type=wvc.config.DataType.TEXT,
-                        description="NASA CMR concept ID"
-                    ),
-                    wvc.config.Property(
-                        name="title",
-                        data_type=wvc.config.DataType.TEXT,
-                        description="Dataset title"
-                    ),
-                    wvc.config.Property(
-                        name="summary",
-                        data_type=wvc.config.DataType.TEXT,
-                        description="Dataset summary/description"
-                    ),
-                    wvc.config.Property(
-                        name="short_name",
-                        data_type=wvc.config.DataType.TEXT,
-                        description="Dataset short name"
-                    ),
-                    wvc.config.Property(
-                        name="data_center",
-                        data_type=wvc.config.DataType.TEXT,
-                        description="Data center/provider"
-                    ),
-                    wvc.config.Property(
-                        name="platforms",
-                        data_type=wvc.config.DataType.TEXT_ARRAY,
-                        description="Satellite platforms"
-                    ),
-                    wvc.config.Property(
-                        name="instruments",
-                        data_type=wvc.config.DataType.TEXT_ARRAY,
-                        description="Instruments used"
-                    ),
-                    wvc.config.Property(
-                        name="variables",
-                        data_type=wvc.config.DataType.TEXT_ARRAY,
-                        description="Measured variables"
-                    ),
-                    wvc.config.Property(
-                        name="temporal_start",
-                        data_type=wvc.config.DataType.DATE,
-                        description="Temporal coverage start"
-                    ),
-                    wvc.config.Property(
-                        name="temporal_end", 
-                        data_type=wvc.config.DataType.DATE,
-                        description="Temporal coverage end"
-                    ),
-                    wvc.config.Property(
-                        name="spatial_coverage",
-                        data_type=wvc.config.DataType.TEXT,
-                        description="Spatial coverage description"
-                    ),
-                    wvc.config.Property(
-                        name="processing_level",
-                        data_type=wvc.config.DataType.TEXT,
-                        description="Data processing level"
-                    ),
-                    wvc.config.Property(
-                        name="keywords",
-                        data_type=wvc.config.DataType.TEXT_ARRAY,
-                        description="Science keywords"
-                    ),
-                    wvc.config.Property(
-                        name="cloud_hosted",
-                        data_type=wvc.config.DataType.BOOL,
-                        description="Whether dataset is cloud hosted"
-                    ),
-                    wvc.config.Property(
-                        name="online_access",
-                        data_type=wvc.config.DataType.BOOL,
-                        description="Online access availability"
-                    ),
-                    wvc.config.Property(
-                        name="combined_text",
-                        data_type=wvc.config.DataType.TEXT,
-                        description="Combined searchable text"
-                    ),
-                    wvc.config.Property(
-                        name="created_at",
-                        data_type=wvc.config.DataType.DATE,
-                        description="Record creation timestamp"
+            # Create collection with robust schema handling for different Weaviate versions
+            try:
+                # Try modern configuration first
+                collection = self.client.collections.create(
+                    name=self.collection_name,
+                    properties=[
+                        wvc.config.Property(
+                            name="concept_id",
+                            data_type=wvc.config.DataType.TEXT,
+                            description="NASA CMR concept ID"
+                        ),
+                        wvc.config.Property(
+                            name="title",
+                            data_type=wvc.config.DataType.TEXT,
+                            description="Dataset title"
+                        ),
+                        wvc.config.Property(
+                            name="summary",
+                            data_type=wvc.config.DataType.TEXT,
+                            description="Dataset summary/description"
+                        ),
+                        wvc.config.Property(
+                            name="short_name",
+                            data_type=wvc.config.DataType.TEXT,
+                            description="Dataset short name"
+                        ),
+                        wvc.config.Property(
+                            name="data_center",
+                            data_type=wvc.config.DataType.TEXT,
+                            description="Data center/provider"
+                        ),
+                        wvc.config.Property(
+                            name="platforms",
+                            data_type=wvc.config.DataType.TEXT_ARRAY,
+                            description="Satellite platforms"
+                        ),
+                        wvc.config.Property(
+                            name="instruments",
+                            data_type=wvc.config.DataType.TEXT_ARRAY,
+                            description="Instruments used"
+                        ),
+                        wvc.config.Property(
+                            name="variables",
+                            data_type=wvc.config.DataType.TEXT_ARRAY,
+                            description="Measured variables"
+                        ),
+                        wvc.config.Property(
+                            name="temporal_start",
+                            data_type=wvc.config.DataType.DATE,
+                            description="Temporal coverage start"
+                        ),
+                        wvc.config.Property(
+                            name="temporal_end", 
+                            data_type=wvc.config.DataType.DATE,
+                            description="Temporal coverage end"
+                        ),
+                        wvc.config.Property(
+                            name="spatial_coverage",
+                            data_type=wvc.config.DataType.TEXT,
+                            description="Spatial coverage description"
+                        ),
+                        wvc.config.Property(
+                            name="processing_level",
+                            data_type=wvc.config.DataType.TEXT,
+                            description="Data processing level"
+                        ),
+                        wvc.config.Property(
+                            name="keywords",
+                            data_type=wvc.config.DataType.TEXT_ARRAY,
+                            description="Science keywords"
+                        ),
+                        wvc.config.Property(
+                            name="cloud_hosted",
+                            data_type=wvc.config.DataType.BOOL,
+                            description="Whether dataset is cloud hosted"
+                        ),
+                        wvc.config.Property(
+                            name="online_access",
+                            data_type=wvc.config.DataType.BOOL,
+                            description="Online access availability"
+                        ),
+                        wvc.config.Property(
+                            name="combined_text",
+                            data_type=wvc.config.DataType.TEXT,
+                            description="Combined searchable text"
+                        ),
+                        wvc.config.Property(
+                            name="created_at",
+                            data_type=wvc.config.DataType.DATE,
+                            description="Record creation timestamp"
+                        )
+                    ],
+                    vectorizer_config=Configure.Vectorizer.none()
+                )
+            except Exception as schema_error:
+                logger.warning(f"Modern schema creation failed: {schema_error}")
+                
+                # Fallback: Try simplified schema without boolean fields
+                try:
+                    collection = self.client.collections.create(
+                        name=self.collection_name,
+                        properties=[
+                            wvc.config.Property(
+                                name="concept_id",
+                                data_type=wvc.config.DataType.TEXT,
+                                description="NASA CMR concept ID"
+                            ),
+                            wvc.config.Property(
+                                name="title",
+                                data_type=wvc.config.DataType.TEXT,
+                                description="Dataset title"
+                            ),
+                            wvc.config.Property(
+                                name="summary",
+                                data_type=wvc.config.DataType.TEXT,
+                                description="Dataset summary/description"
+                            ),
+                            wvc.config.Property(
+                                name="platforms",
+                                data_type=wvc.config.DataType.TEXT_ARRAY,
+                                description="Satellite platforms"
+                            ),
+                            wvc.config.Property(
+                                name="instruments",
+                                data_type=wvc.config.DataType.TEXT_ARRAY,
+                                description="Instruments used"
+                            ),
+                            wvc.config.Property(
+                                name="variables",
+                                data_type=wvc.config.DataType.TEXT_ARRAY,
+                                description="Measured variables"
+                            ),
+                            wvc.config.Property(
+                                name="combined_text",
+                                data_type=wvc.config.DataType.TEXT,
+                                description="Combined searchable text"
+                            )
+                        ]
                     )
-                ],
-                vectorizer_config=Configure.Vectorizer.none()
-            )
+                    logger.info(f"Created simplified Weaviate collection '{self.collection_name}'")
+                except Exception as fallback_error:
+                    logger.error(f"Fallback schema creation also failed: {fallback_error}")
+                    return False
             
             logger.info(f"Created Weaviate collection '{self.collection_name}'")
             return True

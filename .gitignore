@@ -1,0 +1,145 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.manifest
+*.spec
+
+# Virtual Environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.tech/
+.test/
+
+# Environment Variables
+.env
+.env.local
+.env.*.local
+*.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# Testing
+.coverage
+.pytest_cache/
+.tox/
+.nox/
+.hypothesis/
+htmlcov/
+*.cover
+.coverage.*
+
+# Logs
+*.log
+logs/
+*.log.*
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+instance/
+
+# Cache
+.cache/
+*.cache
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+
+# Backup files
+*.bak
+*.backup
+*_backup.*
+requirements_backup.txt
+
+# Temporary files
+*.tmp
+*.temp
+tmp/
+temp/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Vector Database / ML Models
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.npy
+*.npz
+embeddings/
+models/
+checkpoints/
+
+# Docker
+*.pid
+docker-compose.override.yml
+.dockerignore
+
+# Security - NEVER commit these
+*.pem
+*.key
+*.crt
+*.cer
+credentials.json
+secrets.yaml
+secrets.json
+
+# Project specific
+data/raw/
+data/processed/
+data/cache/
+output/
+results/
+*.parquet
+*.csv
+*.xlsx
+*.xls
+
+# Test files from debugging
+test_*.py
+*_test.py
+minimal_*.py
+
+# Node (if any frontend gets added)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Railway/deployment specific
+.railway/

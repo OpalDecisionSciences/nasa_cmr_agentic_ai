@@ -311,10 +311,17 @@ class CMRAPIAgent:
         instruments = []
         
         if "platforms" in cmr_data:
-            platforms = [p.get("short_name", "") for p in cmr_data["platforms"]]
             for platform in cmr_data["platforms"]:
-                if "instruments" in platform:
-                    instruments.extend([i.get("short_name", "") for i in platform["instruments"]])
+                if isinstance(platform, str):
+                    platforms.append(platform)
+                elif isinstance(platform, dict):
+                    platforms.append(platform.get("short_name", ""))
+                    if "instruments" in platform:
+                        for instrument in platform["instruments"]:
+                            if isinstance(instrument, str):
+                                instruments.append(instrument)
+                            elif isinstance(instrument, dict):
+                                instruments.append(instrument.get("short_name", ""))
         
         # Extract temporal coverage
         temporal_coverage = None

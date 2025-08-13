@@ -90,7 +90,7 @@ class CMRAPIAgent:
             try:
                 params = self._build_collection_search_params(query_context)
                 
-                async with self.circuit_breaker.call():
+                async with await self.circuit_breaker.call():
                     collections_data = await self._make_cmr_request("/collections", params)
                 
                 collections = []
@@ -138,7 +138,7 @@ class CMRAPIAgent:
             try:
                 params = self._build_granule_search_params(query_context, collection_concept_id, limit)
                 
-                async with self.circuit_breaker.call():
+                async with await self.circuit_breaker.call():
                     granules_data = await self._make_cmr_request("/granules", params)
                 
                 granules = []
@@ -167,7 +167,7 @@ class CMRAPIAgent:
             try:
                 params = {"collection_concept_id": collection_concept_id}
                 
-                async with self.circuit_breaker.call():
+                async with await self.circuit_breaker.call():
                     variables_data = await self._make_cmr_request("/variables", params)
                 
                 variables = variables_data.get("feed", {}).get("entry", [])

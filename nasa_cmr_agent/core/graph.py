@@ -132,7 +132,7 @@ class CMRAgentGraph:
                 agent_name="query_interpreter",
                 status="success",
                 data={
-                    "query_context": query_context.dict(),
+                    "query_context": query_context.model_dump(),
                     "sub_queries_count": len(sub_queries) if sub_queries else 0
                 },
                 execution_time_ms=0  # TODO: Add timing

@@ -167,12 +167,12 @@ class VectorDatabaseService:
                     ),
                     wvc.config.Property(
                         name="cloud_hosted",
-                        data_type=wvc.config.DataType.BOOLEAN,
+                        data_type=wvc.config.DataType.BOOL,
                         description="Whether dataset is cloud hosted"
                     ),
                     wvc.config.Property(
                         name="online_access",
-                        data_type=wvc.config.DataType.BOOLEAN,
+                        data_type=wvc.config.DataType.BOOL,
                         description="Online access availability"
                     ),
                     wvc.config.Property(
@@ -186,10 +186,12 @@ class VectorDatabaseService:
                         description="Record creation timestamp"
                     )
                 ],
-                vectorizer_config=Configure.Vectorizer.text2vec_transformers(),
-                vector_index_config=Configure.VectorIndex.hnsw(
-                    distance_metric=wvc.config.VectorDistances.COSINE
-                )
+                vector_config=Configure.VectorIndex.hnsw(
+                    distance_metric=wvc.config.VectorDistances.COSINE,
+                    ef_construction=200,
+                    max_connections=64
+                ),
+                vectorizer_config=Configure.Vectorizer.none()
             )
             
             logger.info(f"Created Weaviate collection '{self.collection_name}'")
@@ -265,22 +267,54 @@ class VectorDatabaseService:
             document_uuid = uuid.uuid5(namespace, collection.concept_id)
             
             try:
-                # Check if document already exists
-                existing = nasa_collection.query.fetch_object_by_id(document_uuid)
+                # Generate high-quality vector embedding for semantic search
+                vector = None
+                if self.embedding_model and combined_text:
+                    try:
+                        # Optimize text for NASA Earth science domain and generate embeddings
+                        optimized_text = self._optimize_text_for_embedding(combined_text, collection)
+                        vector = self.embedding_model.encode(optimized_text, convert_to_tensor=False)
+                        if hasattr(vector, 'tolist'):
+                            vector = vector.tolist()
+                        elif isinstance(vector, np.ndarray):
+                            vector = vector.tolist()
+                        logger.debug(f"Generated {len(vector)}-dimensional vector for {collection.concept_id}")
+                    except Exception as vec_error:
+                        logger.warning(f"Vector generation failed for {collection.concept_id}: {vec_error}")
+                
+                # Check if document already exists using concept_id as string UUID
+                try:
+                    existing = nasa_collection.query.fetch_object_by_id(str(document_uuid))
+                except:
+                    existing = None
                 
                 if existing:
-                    # Update existing document
-                    nasa_collection.data.update(
-                        uuid=document_uuid,
-                        properties=document
-                    )
+                    # Update existing document with vector
+                    if vector:
+                        nasa_collection.data.update(
+                            uuid=str(document_uuid),
+                            properties=document,
+                            vector=vector
+                        )
+                    else:
+                        nasa_collection.data.update(
+                            uuid=str(document_uuid),
+                            properties=document
+                        )
                     logger.debug(f"Updated dataset {collection.concept_id} in vector database")
                 else:
-                    # Insert new document
-                    nasa_collection.data.insert(
-                        uuid=document_uuid,
-                        properties=document
-                    )
+                    # Insert new document with vector
+                    if vector:
+                        nasa_collection.data.insert(
+                            uuid=str(document_uuid),
+                            properties=document,
+                            vector=vector
+                        )
+                    else:
+                        nasa_collection.data.insert(
+                            uuid=str(document_uuid),
+                            properties=document
+                        )
                     logger.debug(f"Indexed dataset {collection.concept_id} in vector database")
             
             except Exception as uuid_error:
@@ -360,7 +394,7 @@ class VectorDatabaseService:
                     document_uuid = uuid.uuid5(namespace, collection.concept_id)
                     
                     batch_data.append({
-                        "uuid": document_uuid,
+                        "uuid": str(document_uuid),
                         "properties": document
                     })
                     
@@ -368,14 +402,43 @@ class VectorDatabaseService:
                     logger.warning(f"Failed to prepare dataset {collection.concept_id} for batch: {e}")
                     continue
             
-            # Execute batch insert
+            # Execute batch insert with vectors
             if batch_data:
                 with nasa_collection.batch.dynamic() as batch:
                     for item in batch_data:
-                        batch.add_object(
-                            uuid=item["uuid"],
-                            properties=item["properties"]
-                        )
+                        # Generate optimized vector for each item
+                        combined_text = item["properties"].get("combined_text", "")
+                        vector = None
+                        
+                        if self.embedding_model and combined_text:
+                            try:
+                                # Find the original collection for this item
+                                concept_id = item["properties"].get("concept_id")
+                                original_collection = next((c for c in collections if c.concept_id == concept_id), None)
+                                
+                                if original_collection:
+                                    optimized_text = self._optimize_text_for_embedding(combined_text, original_collection)
+                                    vector = self.embedding_model.encode(optimized_text, convert_to_tensor=False)
+                                else:
+                                    vector = self.embedding_model.encode(combined_text, convert_to_tensor=False)
+                                if hasattr(vector, 'tolist'):
+                                    vector = vector.tolist()
+                                elif isinstance(vector, np.ndarray):
+                                    vector = vector.tolist()
+                            except Exception as vec_error:
+                                logger.warning(f"Batch vector generation failed: {vec_error}")
+                        
+                        if vector:
+                            batch.add_object(
+                                uuid=item["uuid"],
+                                properties=item["properties"],
+                                vector=vector
+                            )
+                        else:
+                            batch.add_object(
+                                uuid=item["uuid"],
+                                properties=item["properties"]
+                            )
                 
                 successful_indexes = len(batch_data)
                 logger.info(f"Successfully batch indexed {successful_indexes} datasets")
@@ -472,8 +535,10 @@ class VectorDatabaseService:
         try:
             nasa_collection = self.client.collections.get(self.collection_name)
             
-            # Get the reference dataset
-            reference = nasa_collection.query.fetch_object_by_id(concept_id)
+            # Get the reference dataset using proper UUID format
+            namespace = uuid.UUID('6ba7b810-9dad-11d1-80b4-00c04fd430c8')
+            document_uuid = str(uuid.uuid5(namespace, concept_id))
+            reference = nasa_collection.query.fetch_object_by_id(document_uuid)
             if not reference:
                 return []
             
@@ -652,6 +717,46 @@ class VectorDatabaseService:
         results.sort(key=lambda x: x.get("combined_score", 0.0), reverse=True)
         
         return results
+    
+    def _optimize_text_for_embedding(self, combined_text: str, collection: CMRCollection) -> str:
+        """Optimize text for NASA Earth science domain semantic embedding."""
+        # Enhance text with domain-specific context for better embeddings
+        optimization_parts = [combined_text]
+        
+        # Add structured metadata context
+        if collection.platforms:
+            optimization_parts.append(f"Satellite platforms: {', '.join(collection.platforms)}")
+        
+        if collection.instruments:
+            optimization_parts.append(f"Scientific instruments: {', '.join(collection.instruments)}")
+        
+        if collection.variables:
+            optimization_parts.append(f"Measured variables: {', '.join(collection.variables)}")
+        
+        if collection.processing_level:
+            optimization_parts.append(f"Processing level: {collection.processing_level}")
+        
+        # Add temporal context if available
+        if collection.temporal_coverage:
+            temporal_info = []
+            if collection.temporal_coverage.get("start"):
+                temporal_info.append(f"from {collection.temporal_coverage['start'][:4]}")
+            if collection.temporal_coverage.get("end"):
+                temporal_info.append(f"to {collection.temporal_coverage['end'][:4]}")
+            if temporal_info:
+                optimization_parts.append(f"Temporal coverage: {' '.join(temporal_info)}")
+        
+        # Add NASA Earth science domain keywords for better semantic understanding
+        domain_context = "NASA Earth observation satellite remote sensing geoscience"
+        optimization_parts.append(domain_context)
+        
+        optimized_text = " | ".join(optimization_parts)
+        
+        # Limit text length for optimal embedding performance
+        if len(optimized_text) > 2000:
+            optimized_text = optimized_text[:2000] + "..."
+        
+        return optimized_text
     
     async def close(self):
         """Close Weaviate client connection."""

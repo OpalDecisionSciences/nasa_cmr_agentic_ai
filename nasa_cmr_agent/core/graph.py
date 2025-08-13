@@ -61,6 +61,14 @@ class CMRAgentGraph:
             settings.enable_knowledge_graph or 
             settings.enable_rag):
             self.analysis_agent = EnhancedAnalysisAgent()
+            
+            # Initialize database pipeline for advanced features
+            if hasattr(self.analysis_agent, 'database_pipeline'):
+                try:
+                    await self.analysis_agent.database_pipeline.initialize()
+                    logger.info("Database pipeline initialized during graph setup")
+                except Exception as e:
+                    logger.warning(f"Database pipeline initialization failed: {e}")
         else:
             # Fallback to basic analysis agent
             from ..agents.analysis_agent import DataAnalysisAgent

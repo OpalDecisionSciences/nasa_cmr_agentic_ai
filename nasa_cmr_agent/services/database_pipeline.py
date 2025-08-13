@@ -82,6 +82,8 @@ class DatabasePipelineService:
             "collections_indexed": 0,
             "relationships_created": 0,
             "variables_enriched": 0,
+            "kg_collections": 0,
+            "cross_relationships": 0,
             "errors": []
         }
         
@@ -97,11 +99,20 @@ class DatabasePipelineService:
             
             # Phase 3: Ingest into knowledge graph with relationship building
             kg_stats = await self._ingest_into_knowledge_graph(enriched_collections, granules)
-            stats.update(kg_stats)
+            stats["kg_collections"] = kg_stats.get("kg_collections", 0)
+            stats["relationships_created"] += kg_stats.get("relationships_created", 0)
+            if kg_stats.get("kg_errors"):
+                stats["errors"].extend(kg_stats["kg_errors"])
             
             # Phase 4: Build cross-collection relationships
             relationship_stats = await self._build_cross_collection_relationships(enriched_collections)
-            stats.update(relationship_stats)
+            stats["cross_relationships"] = relationship_stats.get("cross_relationships", 0)
+            if relationship_stats.get("relationship_errors"):
+                stats["errors"].extend(relationship_stats["relationship_errors"])
+            
+            # Update collections processed
+            stats["collections_processed"] = len(enriched_collections)
+            stats["variables_enriched"] = sum(len(c.variables) for c in enriched_collections if c.variables)
             
             logger.info("Database ingestion completed", stats=stats)
             return stats
@@ -125,16 +136,23 @@ class DatabasePipelineService:
                     enriched.append(collection)
                     continue
                 
-                # Get variables for this collection
-                variables_data = await self.cmr_agent.get_collection_variables(collection.concept_id)
+                # Extract variables from collection metadata (more reliable than API)
+                variables = self._extract_variables_from_metadata(collection)
                 
-                # Extract variable names and attributes
-                variables = []
-                for var_data in variables_data:
-                    if isinstance(var_data, dict):
-                        var_name = var_data.get("name") or var_data.get("variable_name") or var_data.get("long_name")
-                        if var_name:
-                            variables.append(var_name)
+                # Optional: Try CMR variables API as enhancement (not critical for core functionality)
+                try:
+                    if len(variables) < 3:  # Only try API if we need more variables
+                        variables_data = await self.cmr_agent.get_collection_variables(collection.concept_id)
+                        
+                        # Extract additional variable names
+                        for var_data in variables_data:
+                            if isinstance(var_data, dict):
+                                var_name = var_data.get("name") or var_data.get("variable_name") or var_data.get("long_name")
+                                if var_name and var_name not in variables:
+                                    variables.append(var_name)
+                except Exception as var_error:
+                    logger.debug(f"Variables API enhancement failed for {collection.concept_id}: {var_error}")
+                    # Continue with metadata-extracted variables
                 
                 # Update collection with variables
                 collection.variables = variables
@@ -416,6 +434,46 @@ class DatabasePipelineService:
                 logger.warning(f"Failed to get Neo4j stats: {e}")
         
         return stats
+    
+    def _extract_variables_from_metadata(self, collection: CMRCollection) -> List[str]:
+        """Extract likely variable names from collection title and summary."""
+        variables = []
+        
+        # Common Earth science variables
+        variable_patterns = {
+            "temperature": ["temperature", "thermal", "temp", "sst", "lst"],
+            "precipitation": ["precipitation", "rainfall", "rain", "precip"],
+            "humidity": ["humidity", "moisture", "water vapor"],
+            "wind": ["wind", "velocity", "speed"],
+            "pressure": ["pressure", "atmospheric pressure"],
+            "radiation": ["radiation", "radiance", "irradiance", "solar"],
+            "vegetation": ["vegetation", "ndvi", "evi", "biomass", "leaf area"],
+            "cloud": ["cloud", "cloud cover", "cloudiness"],
+            "aerosol": ["aerosol", "dust", "particulate"],
+            "ozone": ["ozone", "o3"],
+            "carbon": ["carbon", "co2", "carbon dioxide"],
+            "albedo": ["albedo", "reflectance"],
+            "elevation": ["elevation", "dem", "topography", "altitude"]
+        }
+        
+        # Check collection title and summary
+        text_content = f"{collection.title or ''} {collection.summary or ''}".lower()
+        
+        for variable_name, patterns in variable_patterns.items():
+            if any(pattern in text_content for pattern in patterns):
+                variables.append(variable_name)
+        
+        # Add instrument-specific variables if available
+        for instrument in collection.instruments:
+            instrument_lower = instrument.lower()
+            if "modis" in instrument_lower and "temperature" not in variables:
+                variables.extend(["temperature", "vegetation", "cloud"])
+            elif "viirs" in instrument_lower and "temperature" not in variables:
+                variables.extend(["temperature", "vegetation"])
+            elif "gpm" in instrument_lower or "trmm" in instrument_lower:
+                variables.append("precipitation")
+        
+        return variables[:5]  # Limit to 5 most relevant variables
     
     async def close(self):
         """Close all database connections."""

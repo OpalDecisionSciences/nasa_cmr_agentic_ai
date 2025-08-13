@@ -108,6 +108,15 @@ class CircuitBreakerService:
                 self.state = CircuitState.OPEN
                 logger.warning(f"Circuit breaker opened after {self.failure_count} failures")
     
+    async def reset(self):
+        """Manually reset circuit breaker to CLOSED state."""
+        async with self._lock:
+            self.state = CircuitState.CLOSED
+            self.failure_count = 0
+            self.last_failure_time = None
+            self.success_count = 0
+            logger.info("Circuit breaker manually reset to CLOSED state")
+    
     def get_state(self) -> Dict[str, Any]:
         """Get current circuit breaker state information."""
         return {

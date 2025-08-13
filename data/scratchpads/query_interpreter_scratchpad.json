@@ -400,5 +400,31 @@
     },
     "tags": [],
     "references": []
+  },
+  {
+    "id": "query_interpreter_000031",
+    "agent_id": "query_interpreter",
+    "timestamp": "2025-08-13 17:40:45.666827+00:00",
+    "note_type": "observation",
+    "content": "Starting query interpretation: 'precipitation datasets for drought monitoring in Africa...'",
+    "context": {
+      "query_length": 55,
+      "timestamp": "2025-08-13T13:40:45.666816"
+    },
+    "tags": [],
+    "references": []
+  },
+  {
+    "id": "query_interpreter_000032",
+    "agent_id": "query_interpreter",
+    "timestamp": "2025-08-13 17:40:46.897045+00:00",
+    "note_type": "decision",
+    "content": "Intent classified as QueryIntent.EXPLORATORY with confidence 0.5",
+    "context": {
+      "intent": "exploratory",
+      "confidence": 0.5
+    },
+    "tags": [],
+    "references": []
   }
 ]

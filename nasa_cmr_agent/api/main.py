@@ -57,6 +57,21 @@ async def lifespan(app: FastAPI):
         try:
             validator = StartupValidator()
             startup_validation = await validator.validate_startup()
+            
+            # If sample data test was successful but relationships are missing, trigger bootstrap
+            sample_test = startup_validation.get("sample_data_test", {})
+            if (sample_test.get("test_performed") and 
+                sample_test.get("collections_processed", 0) > 0 and
+                sample_test.get("relationships_created", 0) == 0):
+                
+                logger.info("Bootstrap: triggering additional sample data ingestion to create relationships")
+                try:
+                    # Run a broader bootstrap query to ensure relationships
+                    bootstrap_fixes = await validator.fix_common_issues()
+                    logger.info("Bootstrap fixes completed", fixes=bootstrap_fixes)
+                except Exception as bootstrap_error:
+                    logger.warning(f"Bootstrap fixes failed: {bootstrap_error}")
+            
             await validator.close()
             
             logger.info("Startup validation completed", 

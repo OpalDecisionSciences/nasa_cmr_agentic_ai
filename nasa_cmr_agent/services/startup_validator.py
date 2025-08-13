@@ -58,12 +58,9 @@ class StartupValidator:
             schema_results = await self._validate_schema_initialization()
             validation_results["schema_initialization"] = schema_results
             
-            # Phase 3: Sample data ingestion test
-            if connection_results.get("all_connected", False):
-                sample_results = await self._test_sample_data_ingestion()
-                validation_results["sample_data_test"] = sample_results
-            else:
-                validation_results["warnings"].append("Skipping sample data test due to connection issues")
+            # Phase 3: Sample data ingestion test - always attempt even with partial connections
+            sample_results = await self._test_sample_data_ingestion()
+            validation_results["sample_data_test"] = sample_results
             
             # Phase 4: Overall assessment
             overall_status = self._assess_overall_status(validation_results)
@@ -187,13 +184,13 @@ class StartupValidator:
         try:
             logger.info("Starting sample data ingestion test")
             
-            # Create a test query for a common dataset
+            # Create a test query for a common dataset - use broader search to ensure results
             test_context = QueryContext(
-                original_query="MODIS sea surface temperature data",
+                original_query="precipitation data",
                 intent=QueryIntent.SPECIFIC_DATA,
                 constraints=QueryConstraints(
-                    keywords=["MODIS", "SST", "sea surface temperature"],
-                    platforms=["Terra", "Aqua"]
+                    keywords=["precipitation", "rainfall"],
+                    # Remove platform constraint to get more results
                 )
             )
             
@@ -201,8 +198,8 @@ class StartupValidator:
             collections = await self.cmr_agent.search_collections(test_context)
             
             if collections:
-                # Limit to 3 collections for testing
-                test_collections = collections[:3]
+                # Use more collections for testing to ensure relationships can be created
+                test_collections = collections[:10]  # Increased from 3 to 10
                 
                 # Test ingestion pipeline
                 ingestion_stats = await self.pipeline.ingest_query_results(
@@ -303,8 +300,15 @@ class StartupValidator:
         
         logger.info("Attempting to fix common startup issues")
         
-        # Fix 1: Reinitialize schemas
+        # Fix 1: Reset circuit breaker and reinitialize schemas
         try:
+            fixes["attempted_fixes"].append("circuit_breaker_reset")
+            
+            # Reset circuit breaker to allow requests
+            await self.cmr_agent.circuit_breaker.reset()
+            fixes["successful_fixes"].append("circuit_breaker_reset")
+            
+            # Reinitialize schemas
             fixes["attempted_fixes"].append("schema_reinitialization")
             
             vector_success = await self.vector_db.initialize_schema()
@@ -318,15 +322,37 @@ class StartupValidator:
         except Exception as e:
             fixes["failed_fixes"].append(f"schema_reinitialization: {e}")
         
-        # Fix 2: Clear any corrupted data
+        # Fix 2: Bootstrap sample data to create relationships
         try:
-            fixes["attempted_fixes"].append("data_cleanup")
+            fixes["attempted_fixes"].append("bootstrap_sample_data")
             
-            # This would implement data cleanup logic
-            fixes["successful_fixes"].append("data_cleanup")
+            # Bootstrap with a broader query to ensure we get datasets with variables
+            bootstrap_context = QueryContext(
+                original_query="satellite Earth observation data",
+                intent=QueryIntent.EXPLORATORY,
+                constraints=QueryConstraints(
+                    keywords=["temperature", "precipitation", "vegetation"]
+                )
+            )
+            
+            # Get more sample collections for bootstrapping
+            bootstrap_collections = await self.cmr_agent.search_collections(bootstrap_context)
+            
+            if bootstrap_collections:
+                # Limit to 15 collections for bootstrap
+                bootstrap_stats = await self.pipeline.ingest_query_results(
+                    bootstrap_context, bootstrap_collections[:15]
+                )
+                
+                if bootstrap_stats.get("relationships_created", 0) > 0:
+                    fixes["successful_fixes"].append(f"bootstrap_sample_data: {bootstrap_stats['relationships_created']} relationships created")
+                else:
+                    fixes["failed_fixes"].append("bootstrap_sample_data: no relationships created")
+            else:
+                fixes["failed_fixes"].append("bootstrap_sample_data: no collections found")
             
         except Exception as e:
-            fixes["failed_fixes"].append(f"data_cleanup: {e}")
+            fixes["failed_fixes"].append(f"bootstrap_sample_data: {e}")
         
         return fixes
     

@@ -306,16 +306,27 @@ class KnowledgeGraphService:
                 
                 # Find datasets with same instruments
                 try:
-                    same_instrument_result = session.run("""
-                        MATCH (d1:Dataset {concept_id: $concept_id})-[:MEASURED_BY]->(i:Instrument)
-                        MATCH (d2:Dataset)-[:MEASURED_BY]->(i)
-                        WHERE d1 <> d2
-                        RETURN DISTINCT d2.concept_id as concept_id,
-                               d2.title as title,
-                               d2.short_name as short_name,
-                               i.name as instrument_name
-                        LIMIT 10
-                    """, {"concept_id": concept_id})
+                    # First check if MEASURED_BY relationships exist at all
+                    rel_check = session.run("""
+                        MATCH ()-[r:MEASURED_BY]->() 
+                        RETURN COUNT(r) as count LIMIT 1
+                    """)
+                    rel_count = rel_check.single()
+                    
+                    if rel_count and rel_count["count"] > 0:
+                        same_instrument_result = session.run("""
+                            MATCH (d1:Dataset {concept_id: $concept_id})-[:MEASURED_BY]->(i:Instrument)
+                            MATCH (d2:Dataset)-[:MEASURED_BY]->(i)
+                            WHERE d1 <> d2
+                            RETURN DISTINCT d2.concept_id as concept_id,
+                                   d2.title as title,
+                                   d2.short_name as short_name,
+                                   i.name as instrument_name
+                            LIMIT 10
+                        """, {"concept_id": concept_id})
+                    else:
+                        logger.debug("No MEASURED_BY relationships found in database")
+                        same_instrument_result = []
                 except Exception as e:
                     logger.debug(f"Instrument relationship query failed: {e}")
                     same_instrument_result = []
@@ -386,19 +397,30 @@ class KnowledgeGraphService:
                 
                 # Find datasets with complementary variables
                 try:
-                    complementary_vars_result = session.run("""
-                        MATCH (d1:Dataset {concept_id: $concept_id})-[:MEASURES]->(v1:Variable)
-                        MATCH (d2:Dataset)-[:MEASURES]->(v2:Variable)
-                        WHERE d1 <> d2 
-                        AND v1 <> v2
-                        AND (v1.name CONTAINS 'temperature' OR v1.name CONTAINS 'precipitation' OR v1.name CONTAINS 'humidity')
-                        AND (v2.name CONTAINS 'temperature' OR v2.name CONTAINS 'precipitation' OR v2.name CONTAINS 'humidity')
-                        RETURN DISTINCT d2.concept_id as concept_id,
-                               d2.title as title,
-                               d2.short_name as short_name,
-                               COLLECT(DISTINCT v2.name) as variables
-                        LIMIT 8
-                    """, {"concept_id": concept_id})
+                    # First check if MEASURES relationships exist at all
+                    measures_check = session.run("""
+                        MATCH ()-[r:MEASURES]->() 
+                        RETURN COUNT(r) as count LIMIT 1
+                    """)
+                    measures_count = measures_check.single()
+                    
+                    if measures_count and measures_count["count"] > 0:
+                        complementary_vars_result = session.run("""
+                            MATCH (d1:Dataset {concept_id: $concept_id})-[:MEASURES]->(v1:Variable)
+                            MATCH (d2:Dataset)-[:MEASURES]->(v2:Variable)
+                            WHERE d1 <> d2 
+                            AND v1 <> v2
+                            AND (v1.name CONTAINS 'temperature' OR v1.name CONTAINS 'precipitation' OR v1.name CONTAINS 'humidity')
+                            AND (v2.name CONTAINS 'temperature' OR v2.name CONTAINS 'precipitation' OR v2.name CONTAINS 'humidity')
+                            RETURN DISTINCT d2.concept_id as concept_id,
+                                   d2.title as title,
+                                   d2.short_name as short_name,
+                                   COLLECT(DISTINCT v2.name) as variables
+                            LIMIT 8
+                        """, {"concept_id": concept_id})
+                    else:
+                        logger.debug("No MEASURES relationships found in database")
+                        complementary_vars_result = []
                 except Exception as e:
                     logger.debug(f"Variables relationship query failed: {e}")
                     complementary_vars_result = []

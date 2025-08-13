@@ -46,7 +46,7 @@ class CircuitBreakerService:
         # Lock for thread safety
         self._lock = asyncio.Lock()
     
-    async def call(self):
+    def call(self):
         """Context manager for circuit breaker calls."""
         return CircuitBreakerContext(self)
     

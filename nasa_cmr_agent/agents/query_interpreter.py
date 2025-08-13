@@ -463,7 +463,7 @@ Return as structured JSON with null for missing constraints."""),
         instruments = []
         
         platform_patterns = {
-            'modis': 'Terra/Aqua',
+            'modis': ['Terra', 'Aqua'],
             'landsat': 'Landsat',
             'sentinel': 'Sentinel',
             'goes': 'GOES',
@@ -473,7 +473,10 @@ Return as structured JSON with null for missing constraints."""),
         
         for pattern, platform in platform_patterns.items():
             if pattern in query_lower:
-                platforms.append(platform)
+                if isinstance(platform, list):
+                    platforms.extend(platform)
+                else:
+                    platforms.append(platform)
                 instruments.append(pattern.upper())
         
         return {

@@ -247,7 +247,7 @@ class CMRAgentGraph:
             # Perform analysis on the retrieved data (enhanced or basic)
             if hasattr(self.analysis_agent, 'analyze_results_enhanced'):
                 analysis_results = await self.analysis_agent.analyze_results_enhanced(
-                    query_context, cmr_results, sub_queries
+                    query_context, cmr_results
                 )
             else:
                 analysis_results = await self.analysis_agent.analyze_results(

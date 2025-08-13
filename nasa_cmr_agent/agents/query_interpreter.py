@@ -198,8 +198,9 @@ Return as structured JSON with null for missing constraints."""),
         if not await self._check_data_availability(constraints):
             return False
         
-        # Validate complexity isn't too high
-        if query_context.complexity_score > 0.9:
+        # Allow high complexity for comparative and analytical queries
+        # Only reject if extremely high complexity (above 1.2)
+        if query_context.complexity_score > 1.2:
             return False
         
         return True

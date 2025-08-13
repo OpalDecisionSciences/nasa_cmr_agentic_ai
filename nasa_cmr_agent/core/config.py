@@ -13,7 +13,6 @@ class Settings(BaseSettings):
     openai_model: str = Field("gpt-4-turbo-preview", env="OPENAI_MODEL")
     anthropic_model: str = Field("claude-3-sonnet-20240229", env="ANTHROPIC_MODEL")
     gemini_model: str = Field("gemini-1.5-pro", env="GEMINI_MODEL")
-    embedding_model: str = Field("text-embedding-3-small", env="EMBEDDING_MODEL")
     
     # NASA CMR API Configuration
     cmr_base_url: str = Field("https://cmr.earthdata.nasa.gov/search", env="CMR_BASE_URL")

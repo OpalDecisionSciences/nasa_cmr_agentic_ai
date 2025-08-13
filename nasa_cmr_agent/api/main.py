@@ -136,13 +136,25 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Add CORS middleware
+# Add CORS middleware with secure configuration
+def get_cors_origins():
+    """Get CORS origins based on environment."""
+    if settings.environment == "development":
+        return ["http://localhost:3000", "http://localhost:8080", "http://127.0.0.1:3000"]
+    elif settings.environment == "production":
+        return [
+            "https://nasa-cmr.opaldecisionsciences.com",
+            "https://opaldecisionsciences.com"
+        ]
+    else:
+        return ["http://localhost:3000"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=get_cors_origins(),
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
 )
 
 

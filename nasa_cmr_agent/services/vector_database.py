@@ -6,6 +6,7 @@ import structlog
 import hashlib
 import json
 import uuid
+from urllib.parse import urlparse
 
 import weaviate
 import weaviate.classes as wvc
@@ -40,33 +41,66 @@ class VectorDatabaseService:
         self._initialize_embedding_model()
     
     def _initialize_client(self):
-        """Initialize Weaviate client."""
+        """Initialize Weaviate client using proper v4 connection patterns."""
         try:
-            # For local Weaviate instance
             weaviate_url = getattr(settings, 'weaviate_url', 'http://localhost:8080')
             weaviate_api_key = getattr(settings, 'weaviate_api_key', None)
             
+            logger.info(f"Initializing Weaviate client for: {weaviate_url}")
+            
+            # Parse URL for connection details
+            parsed_url = urlparse(weaviate_url)
+            host = parsed_url.hostname or 'localhost'
+            port = parsed_url.port or 8080
+            
             if weaviate_api_key:
-                auth_config = Auth.api_key(weaviate_api_key)
-                self.client = weaviate.connect_to_custom(
-                    http_host=weaviate_url.replace('http://', '').replace('https://', ''),
-                    http_port=8080,
-                    http_secure=False,
-                    auth_credentials=auth_config
+                # Cloud/production with API key
+                logger.info(f"Connecting to Weaviate cloud at {weaviate_url}")
+                self.client = weaviate.connect_to_weaviate_cloud(
+                    cluster_url=weaviate_url,
+                    auth_credentials=Auth.api_key(weaviate_api_key)
                 )
             else:
-                # Local development setup with gRPC disabled for Docker
-                self.client = weaviate.connect_to_local(
-                    host="localhost",
-                    port=8080,
-                    grpc_port=50051,
-                    skip_init_checks=True
-                )
+                # Local/Docker environment without API key
+                if host in ['localhost', '127.0.0.1']:
+                    logger.info(f"Connecting to local Weaviate at {host}:{port}")
+                    self.client = weaviate.connect_to_local(
+                        host=host,
+                        port=port,
+                        grpc_port=50051
+                    )
+                elif host == 'weaviate':
+                    # Docker service name - use custom connection
+                    logger.info(f"Connecting to Docker Weaviate service at {host}:{port}")
+                    self.client = weaviate.connect_to_local(
+                        host=host,
+                        port=port,
+                        grpc_port=50051
+                    )
+                else:
+                    # Custom host without API key
+                    logger.info(f"Connecting to custom Weaviate host at {host}:{port}")
+                    self.client = weaviate.connect_to_local(
+                        host=host,
+                        port=port,
+                        grpc_port=50051
+                    )
             
-            logger.info("Weaviate client initialized successfully")
+            # Validate connection
+            if self.client and self.client.is_ready():
+                logger.info("Weaviate client initialized and ready")
+                try:
+                    meta = self.client.get_meta()
+                    logger.info(f"Connected to Weaviate version: {meta.get('version', 'unknown')}")
+                except Exception as meta_e:
+                    logger.warning(f"Could not retrieve Weaviate metadata: {meta_e}")
+            else:
+                logger.error("Weaviate client not ready after initialization")
+                self.client = None
             
         except Exception as e:
-            logger.warning(f"Failed to initialize Weaviate client: {e}")
+            logger.error(f"Failed to initialize Weaviate client: {e}")
+            logger.error(f"URL attempted: {weaviate_url}")
             self.client = None
     
     def _initialize_embedding_model(self):

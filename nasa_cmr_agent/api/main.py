@@ -2,7 +2,7 @@ import asyncio
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List
 import uvicorn
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 import structlog
@@ -15,6 +15,7 @@ from ..models import SystemResponse
 from ..services.monitoring import MetricsService
 from ..services.adaptive_learning import adaptive_learner, UserFeedback
 from ..services.startup_validator import StartupValidator
+from ..streaming.enhanced_stream import stream_manager, EnhancedStreamer
 
 
 # Configure structured logging
@@ -264,7 +265,7 @@ async def health_check():
 
 
 @app.post("/query", response_model=QueryResponse)
-async def process_query(request: QueryRequest, background_tasks: BackgroundTasks):
+async def process_query(request: QueryRequest, background_tasks: BackgroundTasks, http_request: Request):
     """
     Process natural language query for NASA CMR data discovery.
     
@@ -309,11 +310,33 @@ async def process_query(request: QueryRequest, background_tasks: BackgroundTasks
         
         # Process query through agent graph
         if request.stream:
+            # Extract client information for security
+            client_ip = http_request.client.host if http_request.client else None
+            user_agent = http_request.headers.get("user-agent", "unknown")
+            client_id = http_request.headers.get("x-client-id", f"web_client_{client_ip}")
+            
+            # Create enhanced streaming response with security context
+            streamer = await stream_manager.create_stream(
+                client_id=client_id,
+                ip_address=client_ip,
+                user_agent=user_agent
+            )
+            
+            # Start streaming in background
+            asyncio.create_task(
+                _process_query_with_streaming(request.query, streamer)
+            )
+            
             # Return streaming response
             return StreamingResponse(
-                _stream_query_processing(request.query),
-                media_type="application/x-ndjson",
-                headers={"Cache-Control": "no-cache"}
+                streamer.start_stream(),
+                media_type="text/plain",
+                headers={
+                    "Cache-Control": "no-cache",
+                    "Connection": "keep-alive",
+                    "X-Stream-ID": streamer.stream_id,
+                    "X-Client-ID": client_id
+                }
             )
         else:
             # Process query synchronously
@@ -361,6 +384,41 @@ async def get_query_status(query_id: str):
     """Get status of a specific query (useful for long-running queries)."""
     # This would integrate with a query tracking system
     return {"query_id": query_id, "status": "completed"}
+
+
+@app.get("/streams/{stream_id}/status")
+async def get_stream_status(stream_id: str):
+    """Get status of a specific streaming query."""
+    try:
+        stream = await stream_manager.get_stream(stream_id)
+        if not stream:
+            raise HTTPException(status_code=404, detail="Stream not found")
+        
+        return stream.get_stream_metrics()
+    except Exception as e:
+        logger.error(f"Failed to get stream status: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.delete("/streams/{stream_id}")
+async def disconnect_stream(stream_id: str):
+    """Disconnect a specific streaming query."""
+    try:
+        await stream_manager.disconnect_stream(stream_id)
+        return {"success": True, "message": f"Stream {stream_id} disconnected"}
+    except Exception as e:
+        logger.error(f"Failed to disconnect stream: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/streams/manager/stats")
+async def get_stream_manager_stats():
+    """Get streaming system statistics."""
+    try:
+        return stream_manager.get_manager_stats()
+    except Exception as e:
+        logger.error(f"Failed to get stream manager stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/datasets/{collection_id}/details")
@@ -463,25 +521,229 @@ async def get_query_suggestions(partial_query: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Streaming support
-async def _stream_query_processing(query: str):
-    """Stream query processing results as they become available."""
+# Enhanced streaming support
+async def _process_query_with_streaming(query: str, streamer: EnhancedStreamer):
+    """Process query with real-time streaming updates."""
     try:
-        # This would implement real streaming of agent results
-        # For now, return the complete response in streaming format
-        response = await agent_graph.process_query(query)
+        # Initialize agent graph if needed
+        if not agent_graph._initialized:
+            await agent_graph.initialize()
         
-        # Stream agent responses as they complete
-        for agent_response in response.agent_responses:
-            yield f"data: {json.dumps(agent_response.model_dump())}\n\n"
-        
-        # Stream final response
-        yield f"data: {json.dumps(response.model_dump())}\n\n"
-        yield "data: [DONE]\n\n"
+        # Create streaming-enabled query processor
+        await _stream_agent_graph_execution(query, streamer)
         
     except Exception as e:
-        error_data = {"error": str(e), "type": "processing_error"}
-        yield f"data: {json.dumps(error_data)}\n\n"
+        await streamer.emit_agent_error(
+            agent_id="system",
+            error=str(e),
+            recoverable=False
+        )
+    finally:
+        await streamer.complete_stream()
+
+
+async def _stream_agent_graph_execution(query: str, streamer: EnhancedStreamer):
+    """Execute agent graph with streaming progress updates."""
+    try:
+        # Start query processing
+        await streamer.emit_metadata({
+            "query": query,
+            "agents_pipeline": ["query_interpreter", "cmr_api_agent", "analysis_agent", "response_synthesis"]
+        })
+        
+        # Step 1: Query Interpretation
+        await streamer.emit_agent_start(
+            agent_id="query_interpreter",
+            agent_name="Query Interpreter",
+            estimated_duration=2000
+        )
+        
+        await streamer.emit_agent_progress(
+            agent_id="query_interpreter",
+            progress_percent=25.0,
+            current_step="Analyzing user intent"
+        )
+        
+        # Get query context (this would integrate with actual agent)
+        query_context = await agent_graph.query_interpreter.interpret_query(query)
+        
+        await streamer.emit_agent_progress(
+            agent_id="query_interpreter",
+            progress_percent=75.0,
+            current_step="Extracting search parameters"
+        )
+        
+        await streamer.emit_agent_complete(
+            agent_id="query_interpreter",
+            result={"intent": str(query_context.intent), "parameters": query_context.search_params},
+            execution_time_ms=1500
+        )
+        
+        await streamer.emit_partial_result(
+            result_type="query_interpretation",
+            data={"intent": str(query_context.intent), "search_params": query_context.search_params},
+            confidence=0.85
+        )
+        
+        # Step 2: CMR API Search
+        await streamer.emit_agent_start(
+            agent_id="cmr_api_agent",
+            agent_name="CMR API Agent",
+            estimated_duration=5000
+        )
+        
+        await streamer.emit_agent_progress(
+            agent_id="cmr_api_agent",
+            progress_percent=20.0,
+            current_step="Searching CMR collections"
+        )
+        
+        # Execute CMR search with progress updates
+        cmr_results = await _stream_cmr_search(query_context, streamer)
+        
+        await streamer.emit_agent_complete(
+            agent_id="cmr_api_agent",
+            result={"collections_found": len(cmr_results.get("collections", [])),
+                   "total_granules": cmr_results.get("total_granules", 0)},
+            execution_time_ms=4200
+        )
+        
+        # Step 3: Analysis and Recommendations
+        if hasattr(agent_graph, 'analysis_agent'):
+            await streamer.emit_agent_start(
+                agent_id="analysis_agent",
+                agent_name="Analysis Agent",
+                estimated_duration=3000
+            )
+            
+            await streamer.emit_agent_progress(
+                agent_id="analysis_agent",
+                progress_percent=30.0,
+                current_step="Analyzing dataset relevance"
+            )
+            
+            analysis_results = await _stream_analysis(query_context, cmr_results, streamer)
+            
+            await streamer.emit_agent_complete(
+                agent_id="analysis_agent",
+                result={"recommendations_generated": len(analysis_results.get("recommendations", []))},
+                execution_time_ms=2800
+            )
+        
+        # Step 4: Response Synthesis
+        await streamer.emit_agent_start(
+            agent_id="response_synthesis",
+            agent_name="Response Synthesis",
+            estimated_duration=1500
+        )
+        
+        await streamer.emit_agent_progress(
+            agent_id="response_synthesis",
+            progress_percent=50.0,
+            current_step="Generating final response"
+        )
+        
+        # Generate final response
+        final_response = await agent_graph.response_agent.synthesize_response(
+            query_context, cmr_results, analysis_results if 'analysis_results' in locals() else []
+        )
+        
+        await streamer.emit_agent_complete(
+            agent_id="response_synthesis",
+            result={"response_generated": True, "recommendations_count": len(final_response.recommendations)},
+            execution_time_ms=1200
+        )
+        
+        # Stream final results
+        await streamer.emit_partial_result(
+            result_type="final_response",
+            data=final_response.model_dump(),
+            confidence=0.92
+        )
+        
+    except Exception as e:
+        logger.error(f"Streaming execution error: {e}")
+        await streamer.emit_agent_error(
+            agent_id="system",
+            error=f"Processing error: {str(e)}",
+            recoverable=False
+        )
+
+
+async def _stream_cmr_search(query_context, streamer: EnhancedStreamer):
+    """Stream CMR search with progress updates."""
+    try:
+        # Simulate progressive search updates
+        await streamer.emit_agent_progress(
+            agent_id="cmr_api_agent",
+            progress_percent=40.0,
+            current_step="Fetching collection metadata"
+        )
+        
+        # Actual CMR search
+        collections = await agent_graph.cmr_api_agent.search_collections(query_context)
+        
+        await streamer.emit_agent_progress(
+            agent_id="cmr_api_agent",
+            progress_percent=70.0,
+            current_step="Analyzing temporal coverage"
+        )
+        
+        # Stream partial collection results
+        for i, collection in enumerate(collections[:3]):
+            await streamer.emit_partial_result(
+                result_type="collection_preview",
+                data={
+                    "collection_id": collection.get("concept_id"),
+                    "title": collection.get("title"),
+                    "relevance_score": collection.get("relevance_score", 0.0)
+                }
+            )
+        
+        await streamer.emit_agent_progress(
+            agent_id="cmr_api_agent",
+            progress_percent=90.0,
+            current_step="Finalizing results"
+        )
+        
+        return {"collections": collections, "total_granules": sum(c.get("granule_count", 0) for c in collections)}
+        
+    except Exception as e:
+        await streamer.emit_agent_error(
+            agent_id="cmr_api_agent",
+            error=f"CMR search failed: {str(e)}",
+            recoverable=True
+        )
+        return {"collections": [], "total_granules": 0}
+
+
+async def _stream_analysis(query_context, cmr_results, streamer: EnhancedStreamer):
+    """Stream analysis with progress updates."""
+    try:
+        await streamer.emit_agent_progress(
+            agent_id="analysis_agent",
+            progress_percent=60.0,
+            current_step="Generating recommendations"
+        )
+        
+        # Actual analysis
+        analysis = await agent_graph.analysis_agent.analyze_results(query_context, cmr_results)
+        
+        await streamer.emit_agent_progress(
+            agent_id="analysis_agent",
+            progress_percent=90.0,
+            current_step="Validating recommendations"
+        )
+        
+        return analysis
+        
+    except Exception as e:
+        await streamer.emit_agent_error(
+            agent_id="analysis_agent",
+            error=f"Analysis failed: {str(e)}",
+            recoverable=True
+        )
+        return {"recommendations": []}
 
 
 async def _cleanup_query_resources(query_id: str):

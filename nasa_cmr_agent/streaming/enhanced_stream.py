@@ -17,6 +17,15 @@ import structlog
 
 logger = structlog.get_logger(__name__)
 
+# Import security systems
+try:
+    from ..security.rate_limiter import get_rate_limiter, LimitType, ThreatLevel
+    from ..security.audit_logger import get_audit_logger, SecurityEventType, SecurityEventStatus
+    SECURITY_AVAILABLE = True
+except ImportError:
+    logger.warning("Security systems not available for streaming")
+    SECURITY_AVAILABLE = False
+
 
 class StreamEventType(Enum):
     """Types of streaming events."""
@@ -221,10 +230,15 @@ class StreamBuffer:
 
 
 class EnhancedStreamer:
-    """Enhanced streaming system with advanced capabilities."""
+    """Enhanced streaming system with advanced capabilities and security integration."""
     
-    def __init__(self, stream_id: Optional[str] = None):
+    def __init__(self, stream_id: Optional[str] = None, client_id: Optional[str] = None, 
+                 ip_address: Optional[str] = None, user_agent: Optional[str] = None):
         self.stream_id = stream_id or f"stream_{uuid.uuid4().hex[:8]}"
+        self.client_id = client_id or f"client_{uuid.uuid4().hex[:8]}"
+        self.ip_address = ip_address
+        self.user_agent = user_agent
+        
         self.buffer = StreamBuffer()
         self.metrics = StreamMetrics(self.stream_id, time.time())
         self.is_active = False
@@ -248,9 +262,34 @@ class EnhancedStreamer:
         # Background tasks
         self._heartbeat_task: Optional[asyncio.Task] = None
         self._cleanup_task: Optional[asyncio.Task] = None
+        
+        # Security integration
+        self.rate_limiter = get_rate_limiter() if SECURITY_AVAILABLE else None
+        self.audit_logger = get_audit_logger() if SECURITY_AVAILABLE else None
+        self._rate_limit_exceeded = False
+        
+        # Backpressure management
+        self._backpressure_active = False
+        self._last_backpressure_check = time.time()
+        self._backpressure_threshold = 100  # events per second
     
     async def start_stream(self) -> AsyncGenerator[str, None]:
-        """Start streaming with enhanced capabilities."""
+        """Start streaming with enhanced capabilities and security integration."""
+        # Security: Rate limiting check
+        if not await self._check_streaming_rate_limits():
+            yield self._create_error_event("Rate limit exceeded for streaming")
+            return
+        
+        # Security: Log stream start
+        if self.audit_logger:
+            await self.audit_logger.log_data_access_event(
+                user_id=self.client_id,
+                resource="streaming_api",
+                action="stream_start",
+                success=True,
+                details={"stream_id": self.stream_id, "client_info": {"ip": self.ip_address}}
+            )
+        
         self.is_active = True
         self._start_background_tasks()
         
@@ -264,7 +303,13 @@ class EnhancedStreamer:
                     "heartbeat": True,
                     "progress": True,
                     "partial_results": True,
-                    "error_recovery": True
+                    "error_recovery": True,
+                    "rate_limiting": SECURITY_AVAILABLE,
+                    "backpressure_management": True
+                },
+                "security_features": {
+                    "audit_logging": SECURITY_AVAILABLE,
+                    "rate_limiting": SECURITY_AVAILABLE
                 }
             },
             priority=StreamPriority.HIGH
@@ -272,8 +317,15 @@ class EnhancedStreamer:
         
         try:
             while self.is_active and self.client_connected:
+                # Security: Check for rate limiting and backpressure
+                if not await self._check_streaming_permissions():
+                    break
+                
+                # Adaptive batch sizing based on backpressure
+                effective_batch_size = await self._calculate_effective_batch_size()
+                
                 # Get next batch of events
-                events = await self.buffer.get_next_events(self.batch_size)
+                events = await self.buffer.get_next_events(effective_batch_size)
                 
                 if events:
                     for event in events:
@@ -281,6 +333,12 @@ class EnhancedStreamer:
                             break
                         
                         try:
+                            # Security: Rate limit per event
+                            if not await self._check_event_rate_limit():
+                                # Apply backpressure
+                                await self._apply_backpressure()
+                                continue
+                            
                             # Format for streaming
                             formatted_event = event.to_sse_format()
                             
@@ -289,9 +347,24 @@ class EnhancedStreamer:
                             
                             yield formatted_event
                             
+                            # Adaptive delay based on client performance
+                            await self._adaptive_delay()
+                            
                         except Exception as e:
                             self.metrics.errors_count += 1
                             logger.error(f"Stream event error: {e}")
+                            
+                            # Security: Log error event
+                            if self.audit_logger:
+                                await self.audit_logger.log_security_event(
+                                    event_type=SecurityEventType.ERROR_SECURITY,
+                                    status=SecurityEventStatus.FAILURE,
+                                    action="streaming_error",
+                                    description=f"Stream event processing error: {str(e)}",
+                                    user_id=self.client_id,
+                                    ip_address=self.ip_address,
+                                    details={"stream_id": self.stream_id, "error": str(e)}
+                                )
                             
                             # Send error event
                             await self._emit_event(StreamEvent(
@@ -510,6 +583,7 @@ class EnhancedStreamer:
         """Get current stream metrics."""
         return {
             "stream_id": self.stream_id,
+            "client_id": self.client_id,
             "is_active": self.is_active,
             "client_connected": self.client_connected,
             "duration_seconds": time.time() - self.metrics.start_time,
@@ -517,8 +591,135 @@ class EnhancedStreamer:
             "bytes_sent": self.metrics.bytes_sent,
             "errors_count": self.metrics.errors_count,
             "throughput_events_per_sec": self.metrics.throughput_events_per_sec,
-            "buffer_status": self.buffer.get_buffer_status()
+            "buffer_status": self.buffer.get_buffer_status(),
+            "backpressure_active": self._backpressure_active,
+            "rate_limit_exceeded": self._rate_limit_exceeded,
+            "security_enabled": SECURITY_AVAILABLE
         }
+    
+    # Security and backpressure management methods
+    async def _check_streaming_rate_limits(self) -> bool:
+        """Check initial streaming rate limits."""
+        if not self.rate_limiter:
+            return True
+        
+        try:
+            result = await self.rate_limiter.check_rate_limit(
+                client_id=self.client_id,
+                service="streaming",
+                limit_type=LimitType.CONCURRENT_CONNECTIONS,
+                ip_address=self.ip_address,
+                user_agent=self.user_agent
+            )
+            
+            if not result.allowed:
+                self._rate_limit_exceeded = True
+                logger.warning(f"Streaming rate limit exceeded for client {self.client_id}")
+                return False
+            
+            return True
+        except Exception as e:
+            logger.error(f"Rate limit check failed: {e}")
+            return True  # Allow on error
+    
+    async def _check_streaming_permissions(self) -> bool:
+        """Check ongoing streaming permissions."""
+        if self._rate_limit_exceeded:
+            return False
+        
+        # Check for threat level escalation
+        if self.rate_limiter:
+            try:
+                traffic_analysis = self.rate_limiter.get_traffic_analysis()
+                threat_level = traffic_analysis.get("threat_level", ThreatLevel.NORMAL)
+                
+                if threat_level in [ThreatLevel.HIGH, ThreatLevel.CRITICAL]:
+                    logger.warning(f"Streaming blocked due to threat level: {threat_level}")
+                    await self._emit_event(StreamEvent(
+                        event_type=StreamEventType.WARNING,
+                        data={"message": "High threat level detected, applying restrictions"},
+                        priority=StreamPriority.HIGH
+                    ))
+                    return False
+            except Exception as e:
+                logger.debug(f"Threat level check failed: {e}")
+        
+        return True
+    
+    async def _check_event_rate_limit(self) -> bool:
+        """Check rate limit for individual events."""
+        if not self.rate_limiter:
+            return True
+        
+        try:
+            result = await self.rate_limiter.check_rate_limit(
+                client_id=self.client_id,
+                service="streaming",
+                limit_type=LimitType.REQUESTS_PER_SECOND,
+                ip_address=self.ip_address,
+                request_size_bytes=200  # Approximate event size
+            )
+            
+            if not result.allowed:
+                self.metrics.backpressure_events += 1
+                return False
+            
+            return True
+        except Exception as e:
+            logger.debug(f"Event rate limit check failed: {e}")
+            return True
+    
+    async def _calculate_effective_batch_size(self) -> int:
+        """Calculate effective batch size based on backpressure."""
+        base_size = self.batch_size
+        
+        if self._backpressure_active:
+            # Reduce batch size during backpressure
+            return max(1, base_size // 2)
+        
+        # Check current throughput
+        current_time = time.time()
+        time_window = current_time - self._last_backpressure_check
+        
+        if time_window >= 1.0:  # Check every second
+            events_per_second = self.metrics.events_sent / max(1, current_time - self.metrics.start_time)
+            
+            if events_per_second > self._backpressure_threshold:
+                self._backpressure_active = True
+                logger.info(f"Backpressure activated for stream {self.stream_id}")
+            else:
+                self._backpressure_active = False
+            
+            self._last_backpressure_check = current_time
+        
+        return base_size
+    
+    async def _apply_backpressure(self):
+        """Apply backpressure by introducing delay."""
+        if not self._backpressure_active:
+            self._backpressure_active = True
+        
+        # Exponential backoff delay
+        delay = min(0.1 * (self.metrics.backpressure_events + 1), 2.0)
+        await asyncio.sleep(delay)
+        
+        logger.debug(f"Applied backpressure delay: {delay}s for stream {self.stream_id}")
+    
+    async def _adaptive_delay(self):
+        """Apply adaptive delay based on client performance."""
+        if self._backpressure_active:
+            await asyncio.sleep(0.05)  # 50ms delay during backpressure
+        elif self.metrics.throughput_events_per_sec > 50:
+            await asyncio.sleep(0.01)  # 10ms delay for high throughput
+    
+    def _create_error_event(self, error_message: str) -> str:
+        """Create an error event in SSE format."""
+        error_event = StreamEvent(
+            event_type=StreamEventType.ERROR,
+            data={"error": error_message, "fatal": True},
+            priority=StreamPriority.CRITICAL
+        )
+        return error_event.to_sse_format()
 
 
 # Global stream manager for tracking active streams
@@ -530,9 +731,17 @@ class StreamManager:
         self.stream_metrics: Dict[str, Dict[str, Any]] = {}
         self.lock = asyncio.Lock()
     
-    async def create_stream(self, stream_id: Optional[str] = None) -> EnhancedStreamer:
-        """Create a new enhanced stream."""
-        streamer = EnhancedStreamer(stream_id)
+    async def create_stream(self, stream_id: Optional[str] = None, 
+                          client_id: Optional[str] = None,
+                          ip_address: Optional[str] = None, 
+                          user_agent: Optional[str] = None) -> EnhancedStreamer:
+        """Create a new enhanced stream with security context."""
+        streamer = EnhancedStreamer(
+            stream_id=stream_id, 
+            client_id=client_id,
+            ip_address=ip_address,
+            user_agent=user_agent
+        )
         
         async with self.lock:
             self.active_streams[streamer.stream_id] = streamer
@@ -546,7 +755,7 @@ class StreamManager:
         
         streamer.add_complete_callback(cleanup_callback)
         
-        logger.info(f"Created stream {streamer.stream_id}")
+        logger.info(f"Created stream {streamer.stream_id} for client {client_id}")
         return streamer
     
     async def get_stream(self, stream_id: str) -> Optional[EnhancedStreamer]:

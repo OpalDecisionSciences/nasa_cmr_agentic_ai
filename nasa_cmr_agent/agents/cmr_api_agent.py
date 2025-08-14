@@ -38,35 +38,64 @@ class CMRAPIAgent:
         
         self.circuit_breaker = CircuitBreakerService(
             failure_threshold=settings.circuit_breaker_failure_threshold,
-            recovery_timeout=settings.circuit_breaker_recovery_timeout
+            recovery_timeout=settings.circuit_breaker_recovery_timeout,
+            service_name="cmr_api",
+            persist_state=True
         )
         
         # Rate limiting semaphore
         self._rate_limiter = asyncio.Semaphore(self.rate_limit)
         self._last_request_time = datetime.now()
         
-        # HTTP client with connection pooling
+        # HTTP client with connection pooling - create on first use
         self._client = None
+        self._client_lock = asyncio.Lock()
+        self._client_ref_count = 0
+        self._max_idle_time = 300  # 5 minutes
+        self._last_used_time = None
+    
+    async def _ensure_client(self):
+        """Ensure HTTP client is initialized with proper lifecycle management."""
+        async with self._client_lock:
+            if self._client is None or self._client.is_closed:
+                self._client = httpx.AsyncClient(
+                    timeout=self.timeout,
+                    limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),
+                    headers={"User-Agent": "NASA-CMR-Agent/1.0"}
+                )
+            self._client_ref_count += 1
+            self._last_used_time = datetime.now(timezone.utc)
+            return self._client
+    
+    async def _release_client(self):
+        """Release client reference and close if idle."""
+        async with self._client_lock:
+            self._client_ref_count = max(0, self._client_ref_count - 1)
+            
+            # Close client if no active references and idle timeout exceeded
+            if (self._client_ref_count == 0 and 
+                self._last_used_time and 
+                (datetime.now(timezone.utc) - self._last_used_time).total_seconds() > self._max_idle_time):
+                if self._client and not self._client.is_closed:
+                    await self._client.aclose()
+                self._client = None
     
     @asynccontextmanager
     async def _get_client(self):
-        """Get HTTP client with connection pooling."""
-        if self._client is None:
-            self._client = httpx.AsyncClient(
-                timeout=self.timeout,
-                limits=httpx.Limits(max_connections=50, max_keepalive_connections=10)
-            )
-        
+        """Get HTTP client with proper lifecycle management."""
+        client = await self._ensure_client()
         try:
-            yield self._client
+            yield client
         finally:
-            pass  # Keep client open for reuse
+            await self._release_client()
     
     async def close(self):
-        """Close HTTP client connections."""
-        if self._client:
-            await self._client.aclose()
+        """Close HTTP client connections and cleanup resources."""
+        async with self._client_lock:
+            if self._client and not self._client.is_closed:
+                await self._client.aclose()
             self._client = None
+            self._client_ref_count = 0
     
     @retry(
         stop=stop_after_attempt(3),

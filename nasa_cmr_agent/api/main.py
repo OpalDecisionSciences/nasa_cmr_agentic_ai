@@ -45,6 +45,37 @@ metrics_service: MetricsService = None
 startup_validation: Dict[str, Any] = {}
 
 
+def create_fallback_agent_graph(error: Exception) -> CMRAgentGraph:
+    """Create a minimal fallback agent graph for error recovery."""
+    class FallbackAgentGraph:
+        def __init__(self, init_error):
+            self._initialized = False
+            self._fallback_mode = True
+            self._initialization_error = str(init_error)
+            
+        async def initialize(self):
+            """Attempt re-initialization in fallback mode."""
+            raise HTTPException(
+                status_code=503,
+                detail=f"Service temporarily unavailable. Initialization error: {self._initialization_error}"
+            )
+            
+        async def process_query(self, user_query: str):
+            """Return error response in fallback mode."""
+            return {
+                "success": False,
+                "error": "Service is running in fallback mode due to initialization failure",
+                "original_error": self._initialization_error,
+                "suggestion": "Please try again later or contact support"
+            }
+            
+        async def cleanup(self):
+            """No-op cleanup in fallback mode."""
+            pass
+    
+    return FallbackAgentGraph(error)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan management with proper async handling."""
@@ -86,17 +117,22 @@ async def lifespan(app: FastAPI):
             logger.warning(f"Startup validation failed: {validation_error}")
             startup_validation = {"overall_status": "validation_failed", "errors": [str(validation_error)]}
         
-        # Initialize agent graph with fallback handling using thread pool (best practice)
+        # Initialize agent graph with fallback handling
         try:
-            loop = asyncio.get_event_loop()
             # Create agent graph without blocking
             agent_graph = CMRAgentGraph()
             # Skip heavy initialization during startup - do it on first request
             logger.info("Agent graph created (initialization deferred)")
-            logger.info("Agent graph initialized successfully")
+            
+            # Set up a fallback handler for failed initialization
+            agent_graph._fallback_mode = False
+            agent_graph._initialization_error = None
+            
         except Exception as graph_error:
-            logger.warning(f"Agent graph initialization failed: {graph_error} - running in fallback mode")
-            agent_graph = None
+            logger.error(f"Critical: Agent graph creation failed: {graph_error}")
+            # Create a minimal fallback agent graph
+            agent_graph = create_fallback_agent_graph(graph_error)
+            logger.warning("Running in fallback mode with limited functionality")
         
         # Initialize metrics service with fallback handling  
         try:
@@ -239,12 +275,28 @@ async def process_query(request: QueryRequest, background_tasks: BackgroundTasks
     Returns:
         Comprehensive response with dataset recommendations and analysis
     """
-    if not agent_graph or not agent_graph._initialized:
-        # Try to initialize if not done
-        if agent_graph and not agent_graph._initialized:
+    if not agent_graph:
+        raise HTTPException(status_code=503, detail="Agent system not available")
+    
+    # Check if in fallback mode
+    if hasattr(agent_graph, '_fallback_mode') and agent_graph._fallback_mode:
+        fallback_response = await agent_graph.process_query(request.query)
+        return QueryResponse(
+            success=False,
+            data=fallback_response,
+            processing_time_ms=0
+        )
+    
+    # Normal initialization check
+    if not agent_graph._initialized:
+        try:
             await agent_graph.initialize()
-        else:
-            raise HTTPException(status_code=503, detail="Agent system not initialized")
+        except Exception as init_error:
+            logger.error(f"Failed to initialize agent during request: {init_error}")
+            raise HTTPException(
+                status_code=503, 
+                detail=f"Service initialization failed: {str(init_error)}"
+            )
     
     start_time = asyncio.get_event_loop().time()
     

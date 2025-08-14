@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any, Union
 from datetime import datetime
 from enum import Enum
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class QueryIntent(str, Enum):
@@ -30,12 +30,13 @@ class SpatialConstraint(BaseModel):
     west: Optional[float] = Field(None, ge=-180, le=180, description="Western longitude boundary")
     region_name: Optional[str] = Field(None, description="Named geographical region")
     
-    @validator('north')
-    def validate_north_south(cls, v, values):
-        if v is not None and 'south' in values and values['south'] is not None:
-            if v <= values['south']:
+    @model_validator(mode='after')
+    def validate_north_south(self):
+        """Validate that north is greater than south if both are provided."""
+        if self.north is not None and self.south is not None:
+            if self.north <= self.south:
                 raise ValueError('North latitude must be greater than south latitude')
-        return v
+        return self
 
 
 class TemporalConstraint(BaseModel):
@@ -44,12 +45,13 @@ class TemporalConstraint(BaseModel):
     end_date: Optional[datetime] = Field(None, description="End date/time for data search")
     temporal_resolution: Optional[str] = Field(None, description="Required temporal resolution")
     
-    @validator('end_date')
-    def validate_date_range(cls, v, values):
-        if v is not None and 'start_date' in values and values['start_date'] is not None:
-            if v <= values['start_date']:
+    @model_validator(mode='after')
+    def validate_date_range(self):
+        """Validate that end_date is after start_date if both are provided."""
+        if self.end_date is not None and self.start_date is not None:
+            if self.end_date <= self.start_date:
                 raise ValueError('End date must be after start date')
-        return v
+        return self
 
 
 class QueryConstraints(BaseModel):

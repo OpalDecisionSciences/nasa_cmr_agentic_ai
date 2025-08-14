@@ -46,40 +46,58 @@ class CMRAgentGraph:
     def __init__(self):
         # Only set basic attributes - defer initialization
         self._initialized = False
+        self._initializing = False
+        self._init_lock = asyncio.Lock()
         self.max_retries = 2
         
     async def initialize(self):
-        """Async initialization of all components."""
+        """Async initialization of all components with thread-safe locking."""
+        # Use double-checked locking pattern for thread safety
         if self._initialized:
             return
+        
+        async with self._init_lock:
+            # Check again inside the lock
+            if self._initialized:
+                return
             
-        self.query_interpreter = QueryInterpreterAgent()
-        self.cmr_api_agent = CMRAPIAgent()
-        
-        # Use enhanced analysis agent if advanced features are enabled
-        if (settings.enable_vector_search or 
-            settings.enable_knowledge_graph or 
-            settings.enable_rag):
-            self.analysis_agent = EnhancedAnalysisAgent()
+            if self._initializing:
+                # Another coroutine is already initializing
+                while self._initializing and not self._initialized:
+                    await asyncio.sleep(0.1)
+                return
             
-            # Initialize database pipeline for advanced features
-            if hasattr(self.analysis_agent, 'database_pipeline'):
-                try:
-                    await self.analysis_agent.database_pipeline.initialize()
-                    logger.info("Database pipeline initialized during graph setup")
-                except Exception as e:
-                    logger.warning(f"Database pipeline initialization failed: {e}")
-        else:
-            # Fallback to basic analysis agent
-            from ..agents.analysis_agent import DataAnalysisAgent
-            self.analysis_agent = DataAnalysisAgent()
-        
-        self.response_agent = ResponseSynthesisAgent()
-        self.supervisor = SupervisorAgent()
-        self.scratchpad_manager = scratchpad_manager
-        
-        self.graph = self._build_graph()
-        self._initialized = True
+            self._initializing = True
+            try:
+                self.query_interpreter = QueryInterpreterAgent()
+                self.cmr_api_agent = CMRAPIAgent()
+                
+                # Use enhanced analysis agent if advanced features are enabled
+                if (settings.enable_vector_search or 
+                    settings.enable_knowledge_graph or 
+                    settings.enable_rag):
+                    self.analysis_agent = EnhancedAnalysisAgent()
+                    
+                    # Initialize database pipeline for advanced features
+                    if hasattr(self.analysis_agent, 'database_pipeline'):
+                        try:
+                            await self.analysis_agent.database_pipeline.initialize()
+                            logger.info("Database pipeline initialized during graph setup")
+                        except Exception as e:
+                            logger.warning(f"Database pipeline initialization failed: {e}")
+                else:
+                    # Fallback to basic analysis agent
+                    from ..agents.analysis_agent import DataAnalysisAgent
+                    self.analysis_agent = DataAnalysisAgent()
+                
+                self.response_agent = ResponseSynthesisAgent()
+                self.supervisor = SupervisorAgent()
+                self.scratchpad_manager = scratchpad_manager
+                
+                self.graph = self._build_graph()
+                self._initialized = True
+            finally:
+                self._initializing = False
     
     def _build_graph(self) -> StateGraph:
         """Build the LangGraph workflow."""
@@ -186,10 +204,24 @@ class CMRAgentGraph:
     async def _search_collections_node(self, state: AgentState) -> AgentState:
         """Node for CMR collections search."""
         try:
-            query_context = state["query_context"]
+            query_context = state.get("query_context")
+            if not query_context:
+                raise ValueError("Query context is required for collections search")
+            
             collections = await self.cmr_api_agent.search_collections(query_context)
             
+            # Ensure cmr_results exists and is properly structured
+            if "cmr_results" not in state:
+                state["cmr_results"] = {"collections": [], "granules": [], "variables": []}
+            elif not isinstance(state["cmr_results"], dict):
+                state["cmr_results"] = {"collections": [], "granules": [], "variables": []}
+            
             state["cmr_results"]["collections"] = collections
+            
+            # Ensure agent_responses list exists
+            if "agent_responses" not in state:
+                state["agent_responses"] = []
+            
             state["agent_responses"].append(AgentResponse(
                 agent_name="cmr_collections_search",
                 status="success",
@@ -197,7 +229,14 @@ class CMRAgentGraph:
             ))
             
         except Exception as e:
+            # Ensure errors list exists
+            if "errors" not in state:
+                state["errors"] = []
             state["errors"].append(f"Collections search failed: {str(e)}")
+            
+            # Ensure agent_responses list exists
+            if "agent_responses" not in state:
+                state["agent_responses"] = []
             state["agent_responses"].append(AgentResponse(
                 agent_name="cmr_collections_search",
                 status="error",
@@ -328,21 +367,30 @@ class CMRAgentGraph:
         Returns:
             SystemResponse with comprehensive results and analysis
         """
+        # Ensure initialization is complete before processing
+        if not self._initialized:
+            await self.initialize()
+        
         retry_count = 0
         best_response = None
         
         while retry_count <= self.max_retries:
-            # Initialize state with user query
+            # Initialize state with user query - ensure all fields are properly initialized
             initial_state = AgentState({
                 "messages": [HumanMessage(content=user_query)],
                 "original_query": user_query,
                 "retry_count": retry_count,
                 "query_context": None,
-                "cmr_results": {},
+                "cmr_results": {"collections": [], "granules": [], "variables": []},
                 "analysis_results": [],
                 "agent_responses": [],
                 "errors": [],
-                "next_agent": None
+                "next_agent": None,
+                "decomposition_strategy": None,
+                "sub_queries": None,
+                "retry_guidance": None,
+                "validation_issues": None,
+                "final_response": None
             })
             
             # Execute the workflow
@@ -443,5 +491,8 @@ class CMRAgentGraph:
             except Exception as cleanup_error:
                 logger.warning(f"Cleanup warning: {cleanup_error}")
         
-        # Close scratchpads
-        await self.scratchpad_manager.close_all()
+        # Perform periodic cleanup of scratchpads (doesn't close all, just cleans up old data)
+        await self.scratchpad_manager._periodic_cleanup()
+        
+        # Clear session-specific scratchpads if needed
+        # Note: We don't close_all() here as that would clear everything between requests

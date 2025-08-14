@@ -9,7 +9,7 @@ import json
 import logging
 import asyncio
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from enum import Enum
 
@@ -418,22 +418,26 @@ class AgentScratchpad:
         await self._save_to_file()
         
         if self.redis_client:
-            await self.redis_client.close()
+            await self.redis_client.aclose()
 
 
 class ScratchpadManager:
     """
-    Manager for creating and managing agent scratchpads.
+    Manager for creating and managing agent scratchpads with memory management.
     """
     
-    def __init__(self, storage_dir: str = "data/scratchpads"):
+    def __init__(self, storage_dir: str = "data/scratchpads", max_scratchpads: int = 100):
         self.storage_dir = Path(storage_dir)
         self.storage_dir.mkdir(parents=True, exist_ok=True)
         self.scratchpads: Dict[str, AgentScratchpad] = {}
+        self.max_scratchpads = max_scratchpads
+        self.last_cleanup_time = datetime.now(timezone.utc)
+        self.cleanup_interval = timedelta(hours=1)
+        self.access_times: Dict[str, datetime] = {}
     
     async def get_scratchpad(self, agent_id: str) -> AgentScratchpad:
         """
-        Get or create a scratchpad for an agent.
+        Get or create a scratchpad for an agent with automatic cleanup.
         
         Args:
             agent_id: Agent identifier
@@ -441,10 +445,20 @@ class ScratchpadManager:
         Returns:
             AgentScratchpad instance
         """
+        # Perform periodic cleanup
+        await self._periodic_cleanup()
+        
+        # Check if we need to evict old scratchpads
+        if len(self.scratchpads) >= self.max_scratchpads and agent_id not in self.scratchpads:
+            await self._evict_least_recently_used()
+        
         if agent_id not in self.scratchpads:
             scratchpad = AgentScratchpad(agent_id, str(self.storage_dir))
             await scratchpad.initialize()
             self.scratchpads[agent_id] = scratchpad
+        
+        # Update access time
+        self.access_times[agent_id] = datetime.now(timezone.utc)
         
         return self.scratchpads[agent_id]
     
@@ -472,14 +486,70 @@ class ScratchpadManager:
         for scratchpad in self.scratchpads.values():
             await scratchpad.clear_old_notes(days)
     
+    async def _periodic_cleanup(self):
+        """Perform periodic cleanup of old data and unused scratchpads."""
+        now = datetime.now(timezone.utc)
+        if now - self.last_cleanup_time < self.cleanup_interval:
+            return
+        
+        self.last_cleanup_time = now
+        
+        # Clean up old notes in all scratchpads
+        for scratchpad in self.scratchpads.values():
+            await scratchpad.clear_old_notes(days=7)  # Keep only 7 days of notes
+        
+        # Remove scratchpads not accessed in 24 hours
+        cutoff = now - timedelta(hours=24)
+        to_remove = [
+            agent_id for agent_id, last_access in self.access_times.items()
+            if last_access < cutoff
+        ]
+        
+        for agent_id in to_remove:
+            if agent_id in self.scratchpads:
+                await self.scratchpads[agent_id].close()
+                del self.scratchpads[agent_id]
+            del self.access_times[agent_id]
+        
+        if to_remove:
+            logger.info(f"Cleaned up {len(to_remove)} inactive scratchpads")
+    
+    async def _evict_least_recently_used(self):
+        """Evict the least recently used scratchpad to make room."""
+        if not self.access_times:
+            return
+        
+        # Find LRU scratchpad
+        lru_agent_id = min(self.access_times, key=self.access_times.get)
+        
+        if lru_agent_id in self.scratchpads:
+            await self.scratchpads[lru_agent_id].close()
+            del self.scratchpads[lru_agent_id]
+        
+        if lru_agent_id in self.access_times:
+            del self.access_times[lru_agent_id]
+        
+        logger.debug(f"Evicted LRU scratchpad: {lru_agent_id}")
+    
+    async def clear_session(self, agent_id: str):
+        """Clear a specific agent's scratchpad from memory."""
+        if agent_id in self.scratchpads:
+            await self.scratchpads[agent_id].close()
+            del self.scratchpads[agent_id]
+        
+        if agent_id in self.access_times:
+            del self.access_times[agent_id]
+    
     async def close_all(self):
-        """Close all scratchpads."""
+        """Close all scratchpads and clean up resources."""
         for scratchpad in self.scratchpads.values():
             await scratchpad.close()
+        
+        self.scratchpads.clear()
+        self.access_times.clear()
 
 
 # Global scratchpad manager instance
 scratchpad_manager = ScratchpadManager()
 
 
-from datetime import timedelta

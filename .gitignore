@@ -135,10 +135,11 @@ results/
 *.xlsx
 *.xls
 
-# Test files from debugging
-test_*.py
-*_test.py
+# Temporary debugging test files (not the main test suite)
+debug_*.py
+temp_test_*.py
 minimal_*.py
+scratch_*.py
 
 # Node (if any frontend gets added)
 node_modules/

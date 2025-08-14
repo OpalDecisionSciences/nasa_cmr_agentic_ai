@@ -1,5 +1,5 @@
 from typing import Optional
-from pydantic import Field
+from pydantic import Field, ConfigDict
 from pydantic_settings import BaseSettings
 
 
@@ -64,10 +64,11 @@ class Settings(BaseSettings):
     enable_knowledge_graph: bool = Field(True, env="ENABLE_KNOWLEDGE_GRAPH")
     enable_rag: bool = Field(True, env="ENABLE_RAG")
     
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        case_sensitive = False
+    model_config = ConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        case_sensitive=False
+    )
 
 
 settings = Settings()

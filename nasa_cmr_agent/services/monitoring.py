@@ -345,3 +345,46 @@ class MetricsService:
             })
         
         return list(reversed(buckets))
+
+    def record_database_health(self, database_name: str, status: str, response_time_ms: float):
+        """Record database health metrics."""
+        # Create database health metrics if they don't exist
+        if not hasattr(self, 'database_health_gauge'):
+            self.database_health_gauge = Gauge(
+                'cmr_agent_database_health_status',
+                'Database health status (1=healthy, 0=unhealthy)',
+                ['database'],
+                registry=self.registry
+            )
+            
+            self.database_response_time = Histogram(
+                'cmr_agent_database_response_time_seconds',
+                'Database response time in seconds',
+                ['database'],
+                registry=self.registry
+            )
+        
+        # Record metrics
+        health_value = 1 if status.lower() == 'healthy' else 0
+        self.database_health_gauge.labels(database=database_name).set(health_value)
+        self.database_response_time.labels(database=database_name).observe(response_time_ms / 1000.0)
+
+
+# Global metrics service instance
+_metrics_service: Optional[MetricsService] = None
+
+
+async def get_metrics_service() -> Optional[MetricsService]:
+    """Get or create the global metrics service instance."""
+    global _metrics_service
+    
+    if _metrics_service is None:
+        try:
+            from ..core.config import settings
+            if settings.enable_metrics:
+                _metrics_service = MetricsService()
+                _metrics_service.start_server(settings.prometheus_port)
+        except Exception as e:
+            logger.warning(f"Could not initialize metrics service: {e}")
+            
+    return _metrics_service

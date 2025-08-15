@@ -64,6 +64,18 @@ class Settings(BaseSettings):
     enable_knowledge_graph: bool = Field(True, env="ENABLE_KNOWLEDGE_GRAPH")
     enable_rag: bool = Field(True, env="ENABLE_RAG")
     
+    # API Key Management (Optional - for production deployments)
+    enable_api_key_manager: bool = Field(False, env="ENABLE_API_KEY_MANAGER")
+    api_key_encryption_key: Optional[str] = Field(None, env="API_KEY_ENCRYPTION_KEY")
+    
+    # NASA API Credentials (Optional - for enhanced features)
+    earthdata_username: Optional[str] = Field(None, env="EARTHDATA_USERNAME")
+    earthdata_password: Optional[str] = Field(None, env="EARTHDATA_PASSWORD")
+    earthdata_client_id: Optional[str] = Field(None, env="EARTHDATA_CLIENT_ID")
+    earthdata_client_secret: Optional[str] = Field(None, env="EARTHDATA_CLIENT_SECRET")
+    earthdata_redirect_uri: Optional[str] = Field("http://localhost:8000/auth/callback", env="EARTHDATA_REDIRECT_URI")
+    laads_api_key: Optional[str] = Field(None, env="LAADS_API_KEY")
+    
     model_config = ConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

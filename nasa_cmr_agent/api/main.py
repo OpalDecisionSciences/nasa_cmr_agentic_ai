@@ -16,6 +16,8 @@ from ..services.monitoring import MetricsService
 from ..services.adaptive_learning import adaptive_learner, UserFeedback
 from ..services.startup_validator import StartupValidator
 from ..streaming.enhanced_stream import stream_manager, EnhancedStreamer
+from ..monitoring.performance_benchmarks import get_performance_benchmarks
+from ..monitoring.benchmark_visualizations import get_benchmark_visualizations
 
 
 # Configure structured logging
@@ -418,6 +420,94 @@ async def get_stream_manager_stats():
         return stream_manager.get_manager_stats()
     except Exception as e:
         logger.error(f"Failed to get stream manager stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Performance Benchmark Endpoints
+@app.get("/benchmarks/dashboard")
+async def get_performance_dashboard():
+    """Get comprehensive performance benchmark dashboard."""
+    try:
+        benchmark_system = get_performance_benchmarks()
+        visualization_system = get_benchmark_visualizations(benchmark_system)
+        return visualization_system.create_performance_dashboard()
+    except Exception as e:
+        logger.error(f"Failed to get performance dashboard: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/benchmarks/report/{time_period}")
+async def get_benchmark_report(time_period: str = "24h"):
+    """Get detailed performance benchmark report."""
+    try:
+        valid_periods = ["1h", "24h", "7d", "30d"]
+        if time_period not in valid_periods:
+            raise HTTPException(status_code=400, detail=f"Invalid time period. Must be one of: {valid_periods}")
+        
+        benchmark_system = get_performance_benchmarks()
+        visualization_system = get_benchmark_visualizations(benchmark_system)
+        return visualization_system.generate_benchmark_report(time_period)
+    except Exception as e:
+        logger.error(f"Failed to generate benchmark report: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/benchmarks/thresholds")
+async def get_benchmark_thresholds():
+    """Get current performance benchmark thresholds and targets."""
+    try:
+        benchmark_system = get_performance_benchmarks()
+        return {
+            "thresholds": {name: {
+                "target_value": threshold.target_value,
+                "warning_threshold": threshold.warning_threshold,
+                "critical_threshold": threshold.critical_threshold,
+                "unit": threshold.unit,
+                "description": threshold.description,
+                "category": threshold.category.value,
+                "higher_is_better": threshold.higher_is_better
+            } for name, threshold in benchmark_system.thresholds.items()},
+            "categories": [category.value for category in benchmark_system.thresholds["end_to_end_query_time"].category.__class__]
+        }
+    except Exception as e:
+        logger.error(f"Failed to get benchmark thresholds: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/benchmarks/accuracy/{query_id}")
+async def get_query_accuracy_details(query_id: str):
+    """Get detailed accuracy metrics for a specific query."""
+    try:
+        benchmark_system = get_performance_benchmarks()
+        
+        # Find accuracy metrics for the query
+        accuracy_result = next(
+            (result for result in benchmark_system.accuracy_results 
+             if result.query_id == query_id), None
+        )
+        
+        if not accuracy_result:
+            raise HTTPException(status_code=404, detail="Query accuracy metrics not found")
+        
+        return {
+            "query_id": query_id,
+            "accuracy_metrics": {
+                "relevance_score": accuracy_result.relevance_score,
+                "completeness_score": accuracy_result.completeness_score,
+                "accessibility_score": accuracy_result.accessibility_score,
+                "coverage_score": accuracy_result.coverage_score,
+                "freshness_score": accuracy_result.freshness_score,
+                "overall_accuracy": accuracy_result.overall_accuracy,
+                "user_rating": accuracy_result.user_rating,
+                "expert_validation": accuracy_result.expert_validation
+            },
+            "benchmark_status": "excellent" if accuracy_result.overall_accuracy >= 0.85 
+                              else "good" if accuracy_result.overall_accuracy >= 0.70
+                              else "warning" if accuracy_result.overall_accuracy >= 0.50
+                              else "critical"
+        }
+    except Exception as e:
+        logger.error(f"Failed to get query accuracy details: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

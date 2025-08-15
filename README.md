@@ -33,20 +33,46 @@ User Query → Intent Analysis → Query Planning → API Orchestration → Resu
 ## 📋 Requirements
 
 ### Environment Variables
+
+#### Required Configuration
 ```bash
 # Required: At least one LLM provider
-OPENAI_API_KEY=your_openai_api_key
-ANTHROPIC_API_KEY=your_anthropic_api_key
+OPENAI_API_KEY=your_openai_api_key        # For OpenAI GPT models
+ANTHROPIC_API_KEY=your_anthropic_api_key  # For Claude models
+```
 
-# Optional: NASA CMR Configuration
+#### NASA API Services (Optional)
+```bash
+# Basic CMR access (no API key required for public data)
 CMR_BASE_URL=https://cmr.earthdata.nasa.gov/search
 CMR_REQUEST_TIMEOUT=30
 CMR_MAX_RETRIES=3
 
-# Optional: Performance Tuning
+# Enhanced NASA Services (Optional - provides additional capabilities)
+EARTHDATA_USERNAME=your_earthdata_username    # For authenticated NASA data access
+EARTHDATA_PASSWORD=your_earthdata_password    # For authenticated NASA data access
+LAADS_API_KEY=your_laads_api_key             # For MODIS/LAADS DAAC enhanced access
+```
+
+#### System Configuration (Optional)
+```bash
+# Performance Tuning
 MAX_CONCURRENT_REQUESTS=10
 CIRCUIT_BREAKER_FAILURE_THRESHOLD=5
+
+# API Key Management (Optional - for production deployments)
+ENABLE_API_KEY_MANAGER=false                # Set to true for production key management
+API_KEY_ENCRYPTION_KEY=your_encryption_key  # For secure key storage (production only)
+
+# Database Integration (Optional)
+WEAVIATE_URL=http://localhost:8080          # For vector search capabilities
+NEO4J_URI=bolt://localhost:7687             # For knowledge graph features
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=password
+REDIS_URL=redis://localhost:6379            # For caching
 ```
+
+⚠️ **Important**: The system is designed to work without any NASA API credentials. Enhanced features require optional authentication but basic CMR data discovery works out-of-the-box.
 
 ### System Requirements
 - Python 3.11+
@@ -594,12 +620,136 @@ MIT License - see [LICENSE](LICENSE) file for details.
 - **Examples**: See `examples/` directory
 - **Architecture**: See `docs/` directory
 
+## 🔐 API Key Management
+
+### Overview
+The NASA CMR Agent includes an optional unified API Key Management system for production deployments. **This system is completely optional and the application works perfectly without it.**
+
+### Basic Usage (No API Key Management)
+For most users, simply set your LLM API keys in environment variables:
+```bash
+export OPENAI_API_KEY=your_openai_key
+# OR
+export ANTHROPIC_API_KEY=your_anthropic_key
+```
+
+The system will automatically use environment variables and gracefully handle missing NASA API credentials by:
+- Using public CMR API access (no authentication required)
+- Disabling enhanced features that require authentication
+- Providing clear warnings about unavailable services
+
+### Production API Key Management
+For production deployments managing multiple API keys, enable the advanced key management system:
+
+```bash
+# Enable API key management
+export ENABLE_API_KEY_MANAGER=true
+export API_KEY_ENCRYPTION_KEY=your_encryption_key
+```
+
+#### Features
+- **Encrypted Storage**: All API keys stored with military-grade encryption
+- **Automatic Rotation**: Configurable key rotation policies
+- **Usage Monitoring**: Track API key usage and performance
+- **Fallback Management**: Automatic failover to backup keys
+- **Audit Logging**: Complete audit trail of key operations
+
+#### Managing API Keys
+```python
+from nasa_cmr_agent.services.api_key_manager import get_api_key_manager, APIService
+
+# Initialize manager
+manager = await get_api_key_manager()
+
+# Store a new API key
+key_id = await manager.store_api_key(
+    service=APIService.OPENAI,
+    key="sk-your-openai-key",
+    permissions=["read", "write"],
+    expires_in_days=90
+)
+
+# Rotate an API key
+await manager.rotate_api_key(
+    service=APIService.OPENAI,
+    new_key="sk-your-new-openai-key"
+)
+
+# Get current key (automatically decrypted)
+current_key = await manager.get_api_key(APIService.OPENAI)
+```
+
+#### Supported Services
+- **OpenAI**: Language model access
+- **Anthropic**: Claude model access  
+- **NASA CMR**: Basic metadata repository access (optional)
+- **NASA GIOVANNI**: Data analysis and visualization (optional)
+- **MODAPS/LAADS**: MODIS data access (optional)
+- **Atmospheric APIs**: Specialized atmospheric data (optional)
+- **Earthdata Login**: NASA authentication service (optional)
+
+#### Key Rotation Policies
+```python
+# Configure automatic rotation
+policy = KeyRotationPolicy(
+    service=APIService.OPENAI,
+    rotation_interval_days=90,    # Rotate every 3 months
+    warning_days_before_expiry=14, # Warn 2 weeks before expiry
+    auto_rotation_enabled=False,   # Manual approval required
+    backup_keys_count=2           # Keep 2 backup keys
+)
+```
+
+#### Security Features
+- **Encryption at Rest**: AES-256 encryption for stored keys
+- **Secure Memory Handling**: Keys cleared from memory after use
+- **Access Logging**: All key access operations logged
+- **Permission Management**: Granular permissions per API key
+- **Circuit Breaker Integration**: Automatic key disabling on repeated failures
+
+### NASA API Credentials (Optional)
+
+#### Earthdata Login (Recommended for Enhanced Features)
+```bash
+# For access to protected NASA datasets
+EARTHDATA_USERNAME=your_nasa_username
+EARTHDATA_PASSWORD=your_nasa_password
+```
+
+**Benefits of Earthdata Login**:
+- Access to protected/restricted datasets
+- Higher rate limits on some services
+- Access to Level 1 and Level 2 data products
+- Integration with NASA's data ordering systems
+
+#### LAADS DAAC API Key (Optional)
+```bash
+# For enhanced MODIS data access
+LAADS_API_KEY=your_laads_api_key
+```
+
+**How to Get LAADS API Key**:
+1. Visit [LAADS DAAC](https://ladsweb.modaps.eosdis.nasa.gov/)
+2. Create an account or log in
+3. Go to Account Settings → API Keys
+4. Generate a new API key
+
+#### API Usage Without Credentials
+The system is designed to work gracefully without NASA API credentials:
+
+- **CMR Access**: Public datasets accessible without authentication
+- **Degraded Features**: Enhanced services show informational warnings
+- **Fallback Behavior**: System continues with basic functionality
+- **Clear Messaging**: Users informed about optional enhancements
+
 ### Troubleshooting
 
 #### Common Issues
 1. **No LLM API Key**: Set `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`
 2. **CMR API Timeout**: Increase `CMR_REQUEST_TIMEOUT` for complex queries
 3. **Memory Issues**: Reduce `MAX_CONCURRENT_REQUESTS` on constrained systems
+4. **API Key Manager Errors**: Ensure `API_KEY_ENCRYPTION_KEY` is set if using key management
+5. **NASA Service Warnings**: Normal behavior without NASA API credentials
 
 #### Performance Tuning
 - **Concurrent Requests**: Adjust based on available memory

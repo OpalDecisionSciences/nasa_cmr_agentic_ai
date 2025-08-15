@@ -32,14 +32,26 @@ logger = structlog.get_logger(__name__)
 
 
 class APIService(Enum):
-    """Supported NASA API services."""
+    """Supported API services for NASA CMR Agent."""
+    # NASA Services
     CMR = "cmr"
     GIOVANNI = "giovanni"
     MODAPS_LAADS = "modaps_laads"
     ATMOSPHERIC = "atmospheric"
     EARTHDATA_LOGIN = "earthdata_login"
+    
+    # LLM Services - Commercial
     OPENAI = "openai"
     ANTHROPIC = "anthropic"
+    GEMINI = "gemini"
+    DEEPSEEK = "deepseek"
+    COHERE = "cohere"
+    TOGETHER = "together"
+    
+    # LLM Services - Open Source & Alternative
+    HUGGINGFACE = "huggingface"
+    OPENAI_OPENSOURCE = "openai_opensource"
+    META = "meta"
 
 
 class KeyStatus(Enum):
@@ -668,8 +680,20 @@ async def get_service_api_key(service: APIService) -> Optional[str]:
     
     # Fallback to environment variables
     fallback_map = {
+        # LLM Services - Commercial
         APIService.OPENAI: getattr(settings, 'openai_api_key', None),
         APIService.ANTHROPIC: getattr(settings, 'anthropic_api_key', None),
+        APIService.GEMINI: getattr(settings, 'gemini_api_key', None),
+        APIService.DEEPSEEK: getattr(settings, 'deepseek_api_key', None),
+        APIService.COHERE: getattr(settings, 'cohere_api_key', None),
+        APIService.TOGETHER: getattr(settings, 'together_api_key', None),
+        
+        # LLM Services - Open Source & Alternative
+        APIService.HUGGINGFACE: getattr(settings, 'huggingface_api_key', None),
+        APIService.OPENAI_OPENSOURCE: getattr(settings, 'openai_opensource_api_key', None),
+        APIService.META: getattr(settings, 'meta_api_key', None),
+        
+        # NASA Services
         APIService.EARTHDATA_LOGIN: getattr(settings, 'earthdata_username', None),
         APIService.MODAPS_LAADS: getattr(settings, 'laads_api_key', None)
     }

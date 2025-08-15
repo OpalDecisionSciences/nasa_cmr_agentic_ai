@@ -6,13 +6,41 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     """Application configuration settings."""
     
-    # LLM Configuration
+    # LLM Configuration - Comprehensive Provider Support
+    # Commercial LLM APIs
     openai_api_key: Optional[str] = Field(None, env="OPENAI_API_KEY")
     anthropic_api_key: Optional[str] = Field(None, env="ANTHROPIC_API_KEY")
     gemini_api_key: Optional[str] = Field(None, env="GEMINI_API_KEY")
+    deepseek_api_key: Optional[str] = Field(None, env="DEEPSEEK_API_KEY")
+    cohere_api_key: Optional[str] = Field(None, env="COHERE_API_KEY")
+    together_api_key: Optional[str] = Field(None, env="TOGETHER_API_KEY")
+    
+    # Open Source and Alternative APIs
+    huggingface_api_key: Optional[str] = Field(None, env="HUGGINGFACE_API_KEY")
+    openai_opensource_api_key: Optional[str] = Field(None, env="OPENAI_OPENSOURCE_API_KEY")
+    meta_api_key: Optional[str] = Field(None, env="META_API_KEY")
+    
+    # Model Configuration
     openai_model: str = Field("gpt-4-turbo-preview", env="OPENAI_MODEL")
     anthropic_model: str = Field("claude-3-sonnet-20240229", env="ANTHROPIC_MODEL")
     gemini_model: str = Field("gemini-1.5-pro", env="GEMINI_MODEL")
+    deepseek_model: str = Field("deepseek-chat", env="DEEPSEEK_MODEL")
+    cohere_model: str = Field("command-r-plus", env="COHERE_MODEL")
+    together_model: str = Field("meta-llama/Llama-3.1-70b-instruct-turbo", env="TOGETHER_MODEL")
+    huggingface_model: str = Field("microsoft/DialoGPT-large", env="HUGGINGFACE_MODEL")
+    openai_opensource_model: str = Field("gpt-4o-mini", env="OPENAI_OPENSOURCE_MODEL")
+    meta_model: str = Field("meta-llama/Llama-3.2-90B-Vision-Instruct", env="META_MODEL")
+    
+    # API Base URLs for Open Source/Alternative Endpoints
+    huggingface_base_url: str = Field("https://api-inference.huggingface.co", env="HUGGINGFACE_BASE_URL")
+    openai_opensource_base_url: str = Field("https://api.openai.com/v1", env="OPENAI_OPENSOURCE_BASE_URL")
+    meta_base_url: str = Field("https://api.meta.ai/v1", env="META_BASE_URL")
+    
+    # LLM Provider Priority (fallback order)
+    llm_provider_priority: list[str] = Field(
+        ["openai", "anthropic", "gemini", "deepseek", "huggingface", "meta", "openai_opensource", "together", "cohere"], 
+        env="LLM_PROVIDER_PRIORITY"
+    )
     
     # NASA CMR API Configuration
     cmr_base_url: str = Field("https://cmr.earthdata.nasa.gov/search", env="CMR_BASE_URL")

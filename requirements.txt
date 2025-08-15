@@ -65,12 +65,22 @@ jsonschema-specifications==2025.4.1
 jsonschema==4.25.0
 kiwisolver==1.4.9
 kubernetes==33.1.0
-langchain-anthropic==0.3.18
-langchain-community==0.3.27
+# LangChain Core and Base Packages
 langchain-core==0.3.74
-langchain-openai==0.3.30
-langchain-text-splitters==0.3.9
 langchain==0.3.27
+langchain-community==0.3.27
+langchain-text-splitters==0.3.9
+
+# LLM Provider Integrations
+langchain-openai==0.3.30
+langchain-anthropic==0.3.18
+langchain-google-genai==2.1.1
+langchain-huggingface==0.1.2
+
+# Additional LLM Provider Support
+huggingface_hub==0.34.4
+transformers==4.55.0
+torch==2.8.0
 langgraph-checkpoint==2.1.1
 langgraph-prebuilt==0.6.4
 langgraph-sdk==0.2.0
